@@ -1,0 +1,40 @@
+
+{
+  "name": "SEEDS School of Excellence",
+  "short_name": "SEEDS Portal",
+  "description": "Professional Institutional Management for SEEDS School of Excellence",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#022c22",
+  "theme_color": "#052c16",
+  "orientation": "any",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "https://www.seedsschool.edu.pk/wp-content/uploads/2021/09/seeds-logo-green.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://www.seedsschool.edu.pk/wp-content/uploads/2021/09/seeds-logo-green.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Timetable",
+      "short_name": "Schedule",
+      "url": "/#/timetable",
+      "icons": [{ "src": "https://www.seedsschool.edu.pk/wp-content/uploads/2021/09/seeds-logo-green.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Attendance",
+      "short_name": "Roll Call",
+      "url": "/#/attendance",
+      "icons": [{ "src": "https://www.seedsschool.edu.pk/wp-content/uploads/2021/09/seeds-logo-green.png", "sizes": "192x192" }]
+    }
+  ]
+}
