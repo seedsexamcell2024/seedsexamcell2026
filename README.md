@@ -46,7 +46,7 @@ The workflow in `.github/workflows/pages.yml` deploys the static app to GitHub P
 
 To publish from a new GitHub repository:
 
-1. Create an empty repository on GitHub. Do not add a README or license during creation.
+1. Create an empty repository on GitHub. Do not add a README or license during creation. If the repository already contains an app, back it up before replacing its deployed branch.
 2. From this project folder, initialize and push the project:
    ```powershell
    git init -b main
@@ -56,7 +56,7 @@ To publish from a new GitHub repository:
    git push -u origin main
    ```
 3. In the repository, open **Settings → Pages** and select **GitHub Actions** as the build and deployment source. Confirm Actions are allowed to create Pages deployments in **Settings → Actions → General**.
-4. Check the **Actions** tab for a successful deployment. The published app will remain at the setup notice until Supabase is configured and the updated `config.js` is pushed.
+4. Check the **Actions** tab for a successful deployment and open the site URL shown in the `github-pages` environment. The app can only sign in after Supabase has the schema and a developer Auth account linked to a `developer` profile.
 
 GitHub Pages hosts the website only. It does not create a Supabase project, run SQL, create user accounts, or configure database access. Run the Supabase setup above first; after verification, commit only the Project URL and anon/public key in `config.js`. Never commit account passwords or service-role keys.
 
