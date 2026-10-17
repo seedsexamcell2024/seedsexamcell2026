@@ -1030,7 +1030,7 @@
       title: 'Teacher', fields: (row = {}) => [
         imageField('photo_file', 'Teacher picture', imageSrc(row)),
         field('full_name', 'Full name', 'text', row.full_name, null, true),
-        field('email', 'Email address', 'email', row.email, null, true),
+        field('email', 'Email address', 'email', row.email),
         field('phone', 'Phone number', 'tel', row.phone),
         field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value })))
       ]
@@ -1452,6 +1452,10 @@
     const values = Object.fromEntries(new FormData($('#recordForm')).entries());
     const file = values.photo_file;
     const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => formDefinitions[table]?.fields && key !== 'photo_file' && !(value instanceof File)));
+    if (table === 'teachers') {
+      payload.email = String(payload.email || '').trim() || null;
+      payload.phone = String(payload.phone || '').trim() || null;
+    }
     if (table === 'assessments') {
       payload.term = normalizedTerm(payload.term);
       payload.max_marks = Number(payload.max_marks);

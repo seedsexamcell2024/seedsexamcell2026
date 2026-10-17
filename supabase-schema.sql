@@ -38,7 +38,7 @@ create table if not exists public.teachers (
     upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6))
   ),
   full_name text not null,
-  email text not null,
+  email text,
   phone text,
   photo_path text,
   status text not null default 'Active' check (status in ('Active', 'Inactive')),

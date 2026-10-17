@@ -16,6 +16,8 @@ The fictional demo records and sample-preview sign-in have been removed. Until S
 4. For the school logo, open **School settings**, choose an image under **School logo**, and click **Save school settings**.
 5. Use JPG, PNG, or WEBP images up to 5 MB. The preview appears before you save.
 
+Teacher email addresses and phone numbers are optional. A teacher needs an email address only if you create an individual sign-in for them under **User accounts**.
+
 Images are stored in Supabase Storage when the app is connected. Do not upload real school photos until setup and role-based access have been verified.
 
 ## Secure Supabase setup
