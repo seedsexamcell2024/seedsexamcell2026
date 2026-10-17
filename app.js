@@ -115,7 +115,10 @@
     const body = await response.text();
     if (!response.ok) {
       let message = body;
-      try { message = JSON.parse(body).message || JSON.parse(body).hint || body; } catch { /* Keep the server's response text. */ }
+      try {
+        const error = JSON.parse(body);
+        message = [error.message, error.details, error.hint, error.code].filter(Boolean).join(' · ') || body;
+      } catch { /* Keep the server's response text. */ }
       throw new Error(message || `Request failed (${response.status}).`);
     }
     return body ? JSON.parse(body) : null;
@@ -190,12 +193,11 @@
 
   const saveRow = async (table, row, id) => {
     const scopedRow = { ...row, school_id: state.currentSchoolId };
-    if (id) {
-      await api(`${table}?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: scopedRow, prefer: 'return=minimal' });
-    } else {
-      await api(table, { method: 'POST', body: { id: id || crypto.randomUUID(), ...scopedRow }, prefer: 'return=minimal' });
-    }
-    await refreshData();
+    const savedRows = id
+      ? await api(`${table}?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: scopedRow, prefer: 'return=representation' })
+      : await api(table, { method: 'POST', body: { id: id || crypto.randomUUID(), ...scopedRow }, prefer: 'return=representation' });
+    if (!savedRows?.length) throw new Error(`Could not confirm that the ${formDefinitions[table].title.toLowerCase()} was saved.`);
+    return savedRows[0];
   };
 
   const deleteRow = async (table, id) => {
@@ -1452,6 +1454,7 @@
     const values = Object.fromEntries(new FormData($('#recordForm')).entries());
     const file = values.photo_file;
     const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => formDefinitions[table]?.fields && key !== 'photo_file' && !(value instanceof File)));
+    if (table === 'students' && !payload.gender) payload.gender = null;
     if (table === 'teachers') {
       payload.email = String(payload.email || '').trim() || null;
       payload.phone = String(payload.phone || '').trim() || null;
@@ -1486,19 +1489,32 @@
     try {
       let uploadedPath = '';
       let saveId = id || null;
+      let savedRecord;
+      const previousPhotoPath = id ? records(table).find(row => row.id === id)?.photo_path : null;
       if (file instanceof File && file.size) {
         validateImage(file);
         saveId ||= crypto.randomUUID();
         const folder = table === 'students' ? 'students' : 'teachers';
-        uploadedPath = `${state.currentSchoolId}/${folder}/${saveId}.${imageExtension(file)}`;
+        uploadedPath = `${state.currentSchoolId}/${folder}/${crypto.randomUUID()}.${imageExtension(file)}`;
         payload.photo_path = await uploadImage(uploadedPath, file);
       }
       try {
-        await saveRow(table, payload, saveId);
+        savedRecord = await saveRow(table, payload, saveId);
       } catch (error) {
         if (uploadedPath) await removeImage(uploadedPath);
         throw error;
       }
+      let cleanupError = null;
+      if (previousPhotoPath && savedRecord.photo_path !== previousPhotoPath) {
+        try {
+          await removeImage(previousPhotoPath);
+        } catch (error) {
+          cleanupError = error;
+        }
+      }
+      state.data[table] = id
+        ? records(table).map(row => row.id === savedRecord.id ? savedRecord : row)
+        : [...records(table), savedRecord];
       dialog.close();
       if (table === 'assessments') {
         const assignment = records('class_subjects').find(item =>
@@ -1506,8 +1522,24 @@
         state.assessmentAssignmentId = assignment?.id || state.assessmentAssignmentId;
         state.assessmentTerm = normalizedTerm(payload.term);
       }
+      let refreshError = null;
+      try {
+        await refreshData();
+      } catch (error) {
+        refreshError = error;
+      }
       syncSchoolIdentity();
       goToView(state.view);
+      if (refreshError) {
+        const message = refreshError instanceof Error ? refreshError.message : 'Unknown refresh error.';
+        showToast(`${formDefinitions[table].title} saved, but the latest records could not be reloaded. Your saved record is shown; refresh the page before making another change. ${message}`, true);
+        return;
+      }
+      if (cleanupError) {
+        const message = cleanupError instanceof Error ? cleanupError.message : 'Unknown image cleanup error.';
+        showToast(`${formDefinitions[table].title} saved, but the previous picture could not be removed. ${message}`, true);
+        return;
+      }
       showToast(`${formDefinitions[table].title} ${id ? 'updated' : 'added'}.`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not save the record.', true);
