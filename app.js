@@ -1487,34 +1487,40 @@
       }
     }
     try {
-      let uploadedPath = '';
       let saveId = id || null;
       let savedRecord;
       const previousPhotoPath = id ? records(table).find(row => row.id === id)?.photo_path : null;
-      if (file instanceof File && file.size) {
-        validateImage(file);
-        saveId ||= crypto.randomUUID();
+      const hasPhoto = file instanceof File && file.size > 0;
+      if (hasPhoto) validateImage(file);
+      if (hasPhoto) saveId ||= crypto.randomUUID();
+
+      savedRecord = await saveRow(table, payload, saveId);
+      state.data[table] = id
+        ? records(table).map(row => row.id === savedRecord.id ? savedRecord : row)
+        : [...records(table), savedRecord];
+
+      let photoError = null;
+      let uploadedPath = '';
+      if (hasPhoto) {
         const folder = table === 'students' ? 'students' : 'teachers';
         uploadedPath = `${state.currentSchoolId}/${folder}/${crypto.randomUUID()}.${imageExtension(file)}`;
-        payload.photo_path = await uploadImage(uploadedPath, file);
+        try {
+          await uploadImage(uploadedPath, file);
+          savedRecord = await saveRow(table, { photo_path: uploadedPath }, savedRecord.id);
+          state.data[table] = records(table).map(row => row.id === savedRecord.id ? savedRecord : row);
+        } catch (error) {
+          photoError = error;
+        }
       }
-      try {
-        savedRecord = await saveRow(table, payload, saveId);
-      } catch (error) {
-        if (uploadedPath) await removeImage(uploadedPath);
-        throw error;
-      }
+
       let cleanupError = null;
-      if (previousPhotoPath && savedRecord.photo_path !== previousPhotoPath) {
+      if (!photoError && previousPhotoPath && savedRecord.photo_path !== previousPhotoPath) {
         try {
           await removeImage(previousPhotoPath);
         } catch (error) {
           cleanupError = error;
         }
       }
-      state.data[table] = id
-        ? records(table).map(row => row.id === savedRecord.id ? savedRecord : row)
-        : [...records(table), savedRecord];
       dialog.close();
       if (table === 'assessments') {
         const assignment = records('class_subjects').find(item =>
@@ -1533,6 +1539,11 @@
       if (refreshError) {
         const message = refreshError instanceof Error ? refreshError.message : 'Unknown refresh error.';
         showToast(`${formDefinitions[table].title} saved, but the latest records could not be reloaded. Your saved record is shown; refresh the page before making another change. ${message}`, true);
+        return;
+      }
+      if (photoError) {
+        const message = photoError instanceof Error ? photoError.message : 'Unknown picture upload error.';
+        showToast(`${formDefinitions[table].title} details saved, but the picture could not be uploaded or linked. Edit the record and try the picture again. ${message}`, true);
         return;
       }
       if (cleanupError) {
