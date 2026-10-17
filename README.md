@@ -58,6 +58,8 @@ To publish from a new GitHub repository:
 3. In the repository, open **Settings → Pages** and select **GitHub Actions** as the build and deployment source. Confirm Actions are allowed to create Pages deployments in **Settings → Actions → General**.
 4. Check the **Actions** tab for a successful deployment and open the site URL shown in the `github-pages` environment. The app can only sign in after Supabase has the schema and a developer Auth account linked to a `developer` profile.
 
+If **Configure GitHub Pages** fails with “Pages site Not Found,” return to **Settings → Pages**, select **GitHub Actions** as the source, save it, then push a new commit to `main` to start deployment again.
+
 GitHub Pages hosts the website only. It does not create a Supabase project, run SQL, create user accounts, or configure database access. Run the Supabase setup above first; after verification, commit only the Project URL and anon/public key in `config.js`. Never commit account passwords or service-role keys.
 
 The schema uses row-level security. Developer accounts can manage all schools; keep this role limited to trusted individuals. The sign-in role choice is only a convenience: the authenticated Supabase profile determines permissions. The account function permits only a verified developer to create, reset, or remove teacher and parent logins.
