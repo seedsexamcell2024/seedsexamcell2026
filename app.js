@@ -1,0 +1,1795 @@
+(() => {
+  'use strict';
+
+  const todayISO = () => {
+    const date = new Date();
+    return localDateISO(date);
+  };
+  const localDateISO = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const SCHOOL_NAME = 'SEEDS School of Excellence';
+  const BRAND_LOGO = 'assets/seeds-logo.png';
+  const config = window.SEEDS_CONFIG || {};
+  const supabaseUrl = String(config.supabaseUrl || '').replace(/\/+$/, '');
+  const supabaseAnonKey = String(config.supabaseAnonKey || '');
+  const isConfigured = /^https:\/\/[^/]+\.supabase\.co$/.test(supabaseUrl) && supabaseAnonKey.length > 20;
+  const state = {
+    mode: 'unconfigured',
+    token: '',
+    user: null,
+    profile: null,
+    view: 'overview',
+    search: '',
+    classStrengthSearch: '',
+    selectedLoginRole: 'admin',
+    currentSchoolId: '',
+    imageUrls: {},
+    accounts: [],
+    accountsLoaded: false,
+    activeAssessment: null,
+    assessmentAssignmentId: '',
+    assessmentTerm: '1st Term',
+    assessmentShowBothTerms: false,
+    assessmentShowWholeClass: false,
+    assessmentEnrollOpen: false,
+    attendanceDate: todayISO(),
+    attendanceClass: '',
+    attendanceAssignmentId: '',
+    attendanceRangeMode: false,
+    attendanceRangeStart: todayISO(),
+    attendanceRangeEnd: todayISO(),
+    attendanceStatuses: {},
+    attendanceViewMode: 'daily',
+    attendanceMonth: todayISO().slice(0, 7),
+    attendancePrintOrientation: 'landscape',
+    data: Object.fromEntries([
+      'schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects',
+      'subject_enrollments', 'attendance', 'subject_attendance', 'assessments',
+      'marks', 'parent_students'
+    ].map(table => [table, []]))
+  };
+
+  const $ = selector => document.querySelector(selector);
+  const pageContent = $('#pageContent');
+  const toast = $('#toast');
+  let toastTimer;
+
+  const labels = {
+    overview: 'Overview',
+    students: 'Students',
+    teachers: 'Teachers',
+    academics: 'Classes & subjects',
+    attendance: 'Attendance',
+    assessments: 'Assessments & marks',
+    reports: 'Reports',
+    accounts: 'User accounts',
+    school: 'School settings'
+  };
+
+  const roleNames = {
+    developer: 'Developer',
+    admin: 'Administrator',
+    teacher: 'Teacher',
+    student: 'Student',
+    parent: 'Parent / guardian'
+  };
+
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+
+  const showToast = (message, isError = false) => {
+    window.clearTimeout(toastTimer);
+    toast.textContent = message;
+    toast.classList.toggle('error', isError);
+    toast.classList.add('show');
+    toastTimer = window.setTimeout(() => toast.classList.remove('show'), 3600);
+  };
+
+  const setLoginMessage = message => {
+    $('#loginMessage').textContent = message;
+  };
+
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const records = table => state.data[table] || [];
+  const isManager = () => ['developer', 'admin'].includes(state.profile?.role);
+  const currentSchool = () => records('schools').find(school => school.id === state.currentSchoolId) || records('schools')[0] || {};
+  const imageSrc = row => row?.photo_preview || state.imageUrls[row?.photo_path] || '';
+  const className = id => records('classes').find(row => row.id === id)?.name || 'Unassigned';
+  const subjectName = id => records('subjects').find(row => row.id === id)?.name || '—';
+  const teacherName = id => records('teachers').find(row => row.id === id)?.full_name || 'Unassigned';
+  const studentName = id => records('students').find(row => row.id === id)?.full_name || 'Unknown student';
+  const assessmentName = id => records('assessments').find(row => row.id === id)?.title || 'Assessment';
+
+  const api = async (path, options = {}) => {
+    if (!isConfigured) throw new Error('Supabase is not configured. Complete the setup steps in README.md before using school records.');
+    const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${state.token}`,
+        'Content-Type': 'application/json',
+        ...(options.prefer ? { Prefer: options.prefer } : {})
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {})
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      let message = body;
+      try { message = JSON.parse(body).message || JSON.parse(body).hint || body; } catch { /* Keep the server's response text. */ }
+      throw new Error(message || `Request failed (${response.status}).`);
+    }
+    return body ? JSON.parse(body) : null;
+  };
+
+  const refreshData = async () => {
+    const schools = await api('schools?select=*');
+    state.data.schools = schools;
+    if (!schools.some(school => school.id === state.currentSchoolId)) {
+      state.currentSchoolId = schools.find(school => school.id === state.profile.school_id)?.id || schools[0]?.id || '';
+    }
+    if (!state.currentSchoolId) throw new Error('No school is available for this account. Ask the developer to configure a school.');
+    const tableNames = ['students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students'];
+    const schoolFilter = `school_id=eq.${encodeURIComponent(state.currentSchoolId)}&select=*`;
+    const loaded = await Promise.all(tableNames.map(async table => [table, await api(`${table}?${schoolFilter}`)]));
+    loaded.forEach(([table, rows]) => { state.data[table] = rows; });
+    await refreshImageUrls();
+  };
+
+  const refreshImageUrls = async () => {
+    const paths = [
+      currentSchool().logo_path,
+      ...records('students').map(row => row.photo_path),
+      ...records('teachers').map(row => row.photo_path)
+    ].filter(Boolean);
+    const uniquePaths = [...new Set(paths)];
+    const results = await Promise.all(uniquePaths.map(async path => {
+      const objectPath = path.split('/').map(encodeURIComponent).join('/');
+      const response = await fetch(`${supabaseUrl}/storage/v1/object/sign/school-media/${objectPath}`, {
+        method: 'POST',
+        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expiresIn: 3600 })
+      });
+      if (!response.ok) throw new Error(`Could not load an uploaded image (${response.status}).`);
+      const result = await response.json();
+      return [path, result.signedURL.startsWith('http') ? result.signedURL : `${supabaseUrl}${result.signedURL}`];
+    }));
+    state.imageUrls = Object.fromEntries(results);
+  };
+
+  const uploadImage = async (path, file) => {
+    const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`${supabaseUrl}/storage/v1/object/school-media/${objectPath}`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${state.token}`,
+        'Content-Type': file.type,
+        'x-upsert': 'true'
+      },
+      body: file
+    });
+    if (!response.ok) throw new Error(`Image upload failed (${response.status}).`);
+    return path;
+  };
+
+  const removeImage = async path => {
+    const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`${supabaseUrl}/storage/v1/object/school-media/${objectPath}`, {
+      method: 'DELETE',
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${state.token}` }
+    });
+    if (!response.ok && response.status !== 404) throw new Error(`Could not remove the replaced image (${response.status}).`);
+  };
+
+  const fileDataUrl = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read the selected image.'));
+    reader.readAsDataURL(file);
+  });
+
+  const saveRow = async (table, row, id) => {
+    const scopedRow = { ...row, school_id: state.currentSchoolId };
+    if (id) {
+      await api(`${table}?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: scopedRow, prefer: 'return=minimal' });
+    } else {
+      await api(table, { method: 'POST', body: { id: id || crypto.randomUUID(), ...scopedRow }, prefer: 'return=minimal' });
+    }
+    await refreshData();
+  };
+
+  const deleteRow = async (table, id) => {
+    const removed = records(table).find(row => row.id === id);
+    await api(`${table}?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', prefer: 'return=minimal' });
+    if (removed?.photo_path) await removeImage(removed.photo_path);
+    await refreshData();
+  };
+
+  const permittedStudents = () => {
+    const profile = state.profile || {};
+    if (profile.role === 'student') return profile.student_id ? [profile.student_id] : [];
+    if (profile.role === 'parent') {
+      return profile.linked_student_ids || records('parent_students')
+        .filter(link => link.parent_profile_id === profile.id)
+        .map(link => link.student_id);
+    }
+    if (profile.role === 'teacher') {
+      const classes = records('class_subjects')
+        .filter(assignment => assignment.teacher_id === profile.teacher_id)
+        .map(assignment => assignment.class_id);
+      return records('students').filter(student => classes.includes(student.class_id)).map(student => student.id);
+    }
+    return records('students').map(student => student.id);
+  };
+  const attendanceStudents = () => {
+    const permitted = new Set(permittedStudents());
+    const assignment = attendanceAssignment();
+    return records('students').filter(student => permitted.has(student.id) &&
+      (!state.attendanceClass || student.class_id === state.attendanceClass) &&
+      (!assignment || student.class_id === assignment.class_id));
+  };
+  const attendanceAssignment = () => records('class_subjects').find(row =>
+    row.id === state.attendanceAssignmentId &&
+    row.class_id === state.attendanceClass &&
+    (isManager() || state.profile?.role !== 'teacher' || row.teacher_id === state.profile.teacher_id));
+  const permittedAttendanceAssignments = () => records('class_subjects').filter(row =>
+    (!state.attendanceClass || row.class_id === state.attendanceClass) &&
+    (isManager() || row.teacher_id === state.profile?.teacher_id));
+  const activeStudents = () => records('students').filter(student => student.status === 'Active');
+
+  const classStrengthView = () => {
+    const permitted = isManager() ? null : new Set(permittedStudents());
+    const students = activeStudents().filter(student => !permitted || permitted.has(student.id));
+    const classes = records('classes');
+    const classRows = classes.map(item => {
+      const roster = students.filter(student => student.class_id === item.id);
+      return {
+        id: item.id,
+        name: item.name || `Grade ${item.grade || ''}`.trim() || 'Class',
+        section: item.section || '—',
+        boys: roster.filter(student => student.gender === 'Male').length,
+        girls: roster.filter(student => student.gender === 'Female').length,
+        total: roster.length
+      };
+    });
+    const unassigned = students.filter(student => !student.class_id);
+    const assignedActiveStudentCount = classRows.filter(row => row.id).reduce((total, row) => total + row.total, 0);
+    if (unassigned.length) {
+      classRows.push({
+        id: '',
+        name: 'Unassigned',
+        section: '—',
+        boys: unassigned.filter(student => student.gender === 'Male').length,
+        girls: unassigned.filter(student => student.gender === 'Female').length,
+        total: unassigned.length
+      });
+    }
+    const boys = students.filter(student => student.gender === 'Male').length;
+    const girls = students.filter(student => student.gender === 'Female').length;
+    const activeClassCount = classRows.filter(row => row.id && row.total > 0).length;
+    const classQuery = state.classStrengthSearch.trim().toLocaleLowerCase();
+    const visibleClassRows = classRows.filter(row => `${row.name} ${row.section}`.toLocaleLowerCase().includes(classQuery));
+    return `<section class="class-strength-panel panel" aria-labelledby="classStrengthTitle">
+      <header class="strength-heading">
+        <div class="strength-heading-copy"><span class="strength-heading-mark" aria-hidden="true">▦</span><div><div class="strength-title-row"><h2 id="classStrengthTitle">Class strength summary</h2><span class="live-roster-tag">Live roster</span></div><p>Active student enrollment and gender distribution across classes.</p></div></div>
+        <button type="button" class="button button-primary strength-export" data-print-class-strength>Export as PDF</button>
+      </header>
+      <div class="strength-metrics">
+        ${metric('Total enrolled strength', students.length, '♧', '<em>Active student records</em>')}
+        ${metric('Active classes', activeClassCount, '▦', '<em>Classes with an active roster</em>')}
+        ${metric('Boys strength', boys, '♂', `<em>${students.length ? Math.round(boys / students.length * 100) : 0}% of total</em>`)}
+        ${metric('Girls strength', girls, '♀', `<em>${students.length ? Math.round(girls / students.length * 100) : 0}% of total</em>`)}
+        ${metric('Average class size', activeClassCount ? (assignedActiveStudentCount / activeClassCount).toFixed(1) : '0', '◷', '<em>Students per active class</em>')}
+      </div>
+      <div class="strength-filter">
+        <label for="classStrengthSearch">Search classes<input id="classStrengthSearch" type="search" value="${escapeHtml(state.classStrengthSearch)}" placeholder="Type a class or section"></label>
+        <span id="classStrengthCount" role="status">Showing ${visibleClassRows.length} of ${classRows.length} Classes</span>
+      </div>
+      <div class="strength-table-wrap"><table class="data-table strength-table"><thead><tr><th>No.</th><th>Class name</th><th>Section</th><th>Boys</th><th>Girls</th><th>Total strength</th></tr></thead><tbody>
+        ${classRows.length ? classRows.map((row, index) => `<tr data-class-strength-row data-search="${escapeHtml(`${row.name} ${row.section}`.toLocaleLowerCase())}" ${`${row.name} ${row.section}`.toLocaleLowerCase().includes(classQuery) ? '' : 'hidden'}><td>${index + 1}</td><td><strong>${escapeHtml(row.name)}</strong></td><td><span class="section-chip">${escapeHtml(row.section)}</span></td><td class="strength-boys">${row.boys}</td><td class="strength-girls">${row.girls}</td><td><span class="strength-total">${row.total}</span></td></tr>`).join('') : '<tr><td colspan="6" class="empty-state">No classes have been created yet.</td></tr>'}
+        ${classRows.length ? `<tr id="classStrengthNoResults" ${visibleClassRows.length ? 'hidden' : ''}><td colspan="6" class="empty-state">No classes match this search.</td></tr>` : ''}
+      </tbody><tfoot><tr><th colspan="3">School total strength</th><td>${boys}</td><td>${girls}</td><td>${students.length}</td></tr></tfoot></table></div>
+      <footer class="strength-footer"><span>Active classes: <strong>${activeClassCount}</strong></span><span>Active enrolled strength: <strong>${students.length}</strong></span><span>Boys: <strong>${boys}</strong></span><span>Girls: <strong>${girls}</strong></span><small>Students not marked Male or Female are included in total strength, but not either gender count.</small></footer>
+    </section>`;
+  };
+
+  const permittedAssessments = () => {
+    if (isManager()) return records('assessments');
+    const studentIds = new Set(permittedStudents());
+    const classIds = new Set(records('students').filter(student => studentIds.has(student.id)).map(student => student.class_id));
+    if (state.profile?.role === 'teacher') {
+      const assignedClasses = new Set(records('class_subjects')
+        .filter(assignment => assignment.teacher_id === state.profile.teacher_id)
+        .map(assignment => assignment.class_id));
+      return records('assessments').filter(assessment => assignedClasses.has(assessment.class_id));
+    }
+    return records('assessments').filter(assessment => classIds.has(assessment.class_id));
+  };
+
+  const permittedMarks = () => {
+    const studentIds = new Set(permittedStudents());
+    const assessmentIds = new Set(permittedAssessments().map(assessment => assessment.id));
+    return records('marks').filter(mark => studentIds.has(mark.student_id) && assessmentIds.has(mark.assessment_id));
+  };
+
+  const openWorkspace = (profile, user = null, token = '') => {
+    state.mode = 'live';
+    state.profile = profile;
+    state.user = user;
+    state.token = token;
+    $('#loginView').classList.add('hidden');
+    $('#workspaceView').classList.remove('hidden');
+    const name = profile.display_name || profile.full_name || user?.email || 'School user';
+    $('#profileName').textContent = name;
+    $('#profileRole').textContent = roleNames[profile.role] || 'School user';
+    $('#profileInitials').textContent = name.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+    $('#modeBadge').textContent = 'SECURE SCHOOL DATA';
+    $('#modeBadge').classList.add('connected');
+    const schoolPicker = $('#schoolPicker');
+    schoolPicker.innerHTML = records('schools').map(school => `<option value="${escapeHtml(school.id)}" ${school.id === state.currentSchoolId ? 'selected' : ''}>${escapeHtml(school.id === state.currentSchoolId ? SCHOOL_NAME : school.name)}</option>`).join('');
+    schoolPicker.classList.toggle('hidden', profile.role !== 'developer' || records('schools').length < 2);
+    syncSchoolIdentity();
+    const allowedViews = profile.role === 'developer'
+      ? Object.keys(labels)
+      : profile.role === 'admin'
+        ? Object.keys(labels).filter(view => view !== 'accounts')
+        : profile.role === 'teacher'
+          ? ['overview', 'students', 'academics', 'attendance', 'assessments', 'reports']
+          : ['overview', 'attendance', 'assessments', 'reports'];
+    document.querySelectorAll('[data-view]').forEach(button => {
+      const allowed = allowedViews.includes(button.dataset.view);
+      button.classList.toggle('hidden', !allowed);
+    });
+    $('#navStudentCount').textContent = state.data.students.length;
+    goToView('overview');
+  };
+
+  const syncSchoolIdentity = () => {
+    const school = currentSchool();
+    if (!school.id) return;
+    $('#schoolName').textContent = SCHOOL_NAME;
+    $('#schoolYear').textContent = `Academic year ${school.academic_year}`;
+    const brandIcons = [$('#loginBrandIcon'), $('#workspaceBrandIcon')];
+    brandIcons.forEach(icon => {
+      icon.src = BRAND_LOGO;
+    });
+  };
+
+  const logout = () => {
+    state.token = '';
+    state.user = null;
+    state.profile = null;
+    state.mode = 'unconfigured';
+    state.currentSchoolId = '';
+    state.imageUrls = {};
+    state.data = Object.fromEntries(Object.keys(state.data).map(table => [table, []]));
+    $('#workspaceBrandIcon').src = BRAND_LOGO;
+    $('#workspaceView').classList.add('hidden');
+    $('#loginView').classList.remove('hidden');
+    $('#passwordInput').value = '';
+  };
+
+  const signIn = async event => {
+    event.preventDefault();
+    if (!isConfigured) {
+      setLoginMessage('Supabase is not configured. Complete the setup steps in README.md before signing in.');
+      return;
+    }
+    const email = $('#emailInput').value.trim();
+    const password = $('#passwordInput').value;
+    if (!email || !password) return;
+    const submit = $('#loginForm button[type="submit"]');
+    submit.disabled = true;
+    setLoginMessage('Signing in securely…');
+    try {
+      const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const auth = await response.json();
+      if (!response.ok) throw new Error(auth.msg || auth.message || 'Sign in failed. Check your email and password.');
+      state.token = auth.access_token;
+      state.user = auth.user;
+      const profiles = await api(`profiles?id=eq.${encodeURIComponent(auth.user.id)}&select=*`);
+      if (!profiles.length) throw new Error('Your account has no school profile yet. Ask your administrator for help.');
+      state.profile = profiles[0];
+      if (state.profile.role !== state.selectedLoginRole) {
+        throw new Error(`This is a ${roleNames[state.profile.role] || 'different'} account. Choose the matching account type and try again.`);
+      }
+      state.currentSchoolId = state.profile.school_id;
+      await refreshData();
+      if (['developer', 'admin'].includes(state.profile.role) && currentSchool().name !== SCHOOL_NAME) {
+        await api(`schools?id=eq.${encodeURIComponent(state.currentSchoolId)}`, {
+          method: 'PATCH',
+          body: { name: SCHOOL_NAME },
+          prefer: 'return=minimal'
+        });
+        currentSchool().name = SCHOOL_NAME;
+      }
+      openWorkspace(state.profile, auth.user, auth.access_token);
+    } catch (error) {
+      state.token = '';
+      state.user = null;
+      setLoginMessage(error instanceof Error ? error.message : 'Sign in failed.');
+    } finally {
+      submit.disabled = false;
+    }
+  };
+
+  const allowedRows = table => {
+    let rows = records(table);
+    if (table === 'students') {
+      const permitted = new Set(permittedStudents());
+      rows = rows.filter(row => permitted.has(row.id));
+    }
+    if (table === 'students' && state.search) {
+      const query = state.search.toLowerCase();
+      rows = rows.filter(row => [row.full_name, row.student_id, className(row.class_id)].some(value => String(value || '').toLowerCase().includes(query)));
+    }
+    if (table === 'teachers' && state.search) {
+      const query = state.search.toLowerCase();
+      rows = rows.filter(row => {
+        const assignments = records('class_subjects').filter(assignment => assignment.teacher_id === row.id);
+        const subjects = [...new Set(assignments.map(assignment => subjectName(assignment.subject_id)))];
+        const classes = [...new Set(assignments.map(assignment => className(assignment.class_id)))];
+        return [row.full_name, row.teacher_id, row.email, ...subjects, ...classes]
+          .some(value => String(value || '').toLowerCase().includes(query));
+      });
+    }
+    return rows;
+  };
+
+  const pageHeading = (eyebrow, title, subtitle, actions = '') => `
+    <div class="page-heading">
+      <div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div>
+      ${actions ? `<div class="heading-actions">${actions}</div>` : ''}
+    </div>`;
+
+  const metric = (label, value, icon, foot) => `
+    <article class="metric-card"><div class="metric-top"><span>${escapeHtml(label)}</span><span class="metric-icon">${icon}</span></div>
+    <div class="metric-value">${escapeHtml(value)}</div><div class="metric-foot">${foot}</div></article>`;
+
+  const photo = (row, fallback) => imageSrc(row)
+    ? `<img class="person-photo" src="${escapeHtml(imageSrc(row))}" alt="">`
+    : `<span class="table-avatar">${escapeHtml(fallback)}</span>`;
+
+  const studentsTable = (rows, controls = true) => {
+    if (!rows.length) return `<div class="empty-state"><strong>No student records yet</strong>Add students to start tracking classes, attendance, and results.</div>`;
+    const canManage = isManager();
+    return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Student ID</th><th>Class</th><th>Guardian</th><th>Status</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>
+      ${rows.map(row => `<tr><td><div class="person-cell">${photo(row, row.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}<span><strong>${escapeHtml(row.full_name)}</strong><small>${escapeHtml(row.gender || 'Student')}</small></span></div></td><td>${escapeHtml(row.student_id || 'Assigned on save')}</td><td>${escapeHtml(className(row.class_id))}</td><td>${escapeHtml(row.guardian_name || '—')}</td><td><span class="status-pill">${escapeHtml(row.status || 'Active')}</span></td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="students" data-id="${escapeHtml(row.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="students" data-id="${escapeHtml(row.id)}">Remove</button></td>` : ''}</tr>`).join('')}
+    </tbody></table></div>`;
+  };
+
+  const teachersTable = rows => {
+    if (!rows.length) return `<div class="empty-state"><strong>No teacher records yet</strong>Add teachers and assign subjects to their classes.</div>`;
+    const canManage = isManager();
+    return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Teacher</th><th>Teacher ID</th><th>Email</th><th>Phone</th><th>Subjects assigned</th><th>Classes assigned</th><th>Status</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>
+      ${rows.map(row => {
+        const assignments = records('class_subjects').filter(assignment => assignment.teacher_id === row.id);
+        const subjects = [...new Set(assignments.map(assignment => subjectName(assignment.subject_id)))];
+        const classes = [...new Set(assignments.map(assignment => className(assignment.class_id)))];
+        return `<tr><td><div class="person-cell">${photo(row, row.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}<span><strong>${escapeHtml(row.full_name)}</strong><small>Faculty member</small></span></div></td><td>${escapeHtml(row.teacher_id || 'Assigned on save')}</td><td>${escapeHtml(row.email || '—')}</td><td>${escapeHtml(row.phone || '—')}</td><td>${subjects.length ? subjects.map(escapeHtml).join(', ') : '—'}</td><td>${classes.length ? classes.map(escapeHtml).join(', ') : '—'}</td><td><span class="status-pill">${escapeHtml(row.status || 'Active')}</span></td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="teachers" data-id="${escapeHtml(row.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="teachers" data-id="${escapeHtml(row.id)}">Remove</button></td>` : ''}</tr>`;
+      }).join('')}
+    </tbody></table></div>`;
+  };
+
+  const overviewView = () => {
+    const students = allowedRows('students');
+    const totalAttendance = records('attendance').filter(row => row.attendance_date === state.attendanceDate);
+    const present = totalAttendance.filter(row => row.status === 'present').length;
+    const attendanceRate = totalAttendance.length ? Math.round(present / totalAttendance.length * 100) : 0;
+    const chartData = ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'].map((month, index) => ({ month, value: [48, 63, 56, 76, 68, 86][index] }));
+    const assessmentRows = records('assessments').slice(0, 4);
+    const recent = [
+      ...assessmentRows.map(item => ({ icon: '▤', title: item.title, detail: `${className(item.class_id)} · ${subjectName(item.subject_id)}`, time: item.assessment_date })),
+      { icon: '✓', title: `${present} students marked present`, detail: 'Attendance updated today', time: 'Today' }
+    ].slice(0, 4);
+    const todayLabel = new Date().toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase();
+    return `${pageHeading(todayLabel, `Good day, ${escapeHtml((state.profile.display_name || 'there').split(' ')[0])}.`, 'Here is what is happening across your school today.', isManager() ? '<button class="button button-outline button-small" data-action="export">Export report</button><button class="button button-primary button-small" data-action="add" data-table="students">＋ Add student</button>' : '')}
+      ${isManager() || state.profile.role === 'teacher' ? classStrengthView() : ''}
+      <div class="metrics-grid">
+        ${metric('Total students', students.length, '♧', '<em>Academic year 2026</em>')}
+        ${metric('Teaching staff', records('teachers').length, '♙', '<em>Faculty directory</em>')}
+        ${metric('Attendance today', `${attendanceRate}%`, '✓', `${present} present · ${totalAttendance.length - present} absent / leave / holiday`)}
+        ${metric('Assessments', records('assessments').length, '▤', '<em>Monthly and term exams</em>')}
+      </div>
+      <div class="dashboard-grid">
+        <section class="panel"><header class="panel-header"><div><h2>Academic progress</h2><p>Assessment performance over the school year</p></div><button class="button button-outline button-small" data-view="reports">View reports</button></header><div class="panel-body"><div class="chart-area">${chartData.map(item => `<div class="chart-column"><div class="chart-bars" style="--bar:${item.value}"></div><span>${item.month}</span></div>`).join('')}</div></div></section>
+        <section class="panel"><header class="panel-header"><div><h2>Attendance today</h2><p>School-wide attendance overview</p></div><button class="text-button" data-view="attendance">Details →</button></header><div class="panel-body"><div class="attendance-ring"><div class="ring"><strong>${attendanceRate}%</strong></div><div class="ring-legend"><div class="legend-row"><i class="legend-dot"></i> Present <strong>${present}</strong></div><div class="legend-row"><i class="legend-dot absent"></i> Absent <strong>${totalAttendance.filter(row => row.status === 'absent').length}</strong></div><div class="legend-row"><i class="legend-dot leave"></i> Leave <strong>${totalAttendance.filter(row => row.status === 'leave').length}</strong></div></div></div></div></section>
+      </div>
+      <div class="dashboard-grid">
+        <section class="panel"><header class="panel-header"><div><h2>Recently added students</h2><p>Student directory overview</p></div><button class="text-button" data-view="students">View all →</button></header><div class="panel-body">${studentsTable(students.slice(0, 4), false)}</div></section>
+        <section class="panel"><header class="panel-header"><div><h2>Recent activity</h2><p>Latest academic updates</p></div></header><div class="panel-body"><div class="activity-list">${recent.map(item => `<div class="activity-item"><span class="activity-symbol">${item.icon}</span><span class="activity-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail)}</small></span><span class="activity-time">${escapeHtml(item.time)}</span></div>`).join('')}</div></div></section>
+      </div>`;
+  };
+
+  const directoryView = (table, title, subtitle, actionLabel) => {
+    const rows = allowedRows(table);
+    const add = isManager() ? `<button class="button button-primary button-small" data-action="add" data-table="${table}">＋ ${actionLabel}</button>` : '';
+    return `${pageHeading('PEOPLE DIRECTORY', title, subtitle, add)}
+      <div class="table-toolbar"><input id="tableSearch" class="table-search" type="search" value="${escapeHtml(state.search)}" placeholder="Search by name, ID, or class…" aria-label="Search records"><span class="summary-chip">${rows.length} records</span></div>
+      ${table === 'students' ? studentsTable(rows) : teachersTable(rows)}`;
+  };
+
+  const classesAndSubjectsView = () => {
+    const canManage = isManager();
+    const action = (table, label) => canManage ? `<button class="button button-outline button-small" data-action="add" data-table="${table}">＋ ${label}</button>` : '';
+    return `${pageHeading('ACADEMIC STRUCTURE', 'Classes & subjects', 'Organize classes and assign subject teachers.', '')}
+      <div class="dashboard-grid">
+        <section class="panel"><header class="panel-header"><div><h2>Classes</h2><p>${records('classes').length} active classes</p></div>${action('classes', 'Class')}</header><div class="panel-body">${records('classes').length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Class</th><th>Students</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>${records('classes').map(item => `<tr><td><strong>${escapeHtml(item.name)}</strong></td><td>${records('students').filter(student => student.class_id === item.id).length}</td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="classes" data-id="${escapeHtml(item.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="classes" data-id="${escapeHtml(item.id)}">Remove</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">No classes added.</div>'}</div></section>
+        <section class="panel"><header class="panel-header"><div><h2>Subjects</h2><p>${records('subjects').length} subjects in the curriculum</p></div>${action('subjects', 'Subject')}</header><div class="panel-body">${records('subjects').length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Subject</th><th>Code</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>${records('subjects').map(item => `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.code || '—')}</td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="subjects" data-id="${escapeHtml(item.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="subjects" data-id="${escapeHtml(item.id)}">Remove</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">No subjects added.</div>'}</div></section>
+      </div>
+      <section class="panel" style="margin-top:15px"><header class="panel-header"><div><h2>Teaching assignments</h2><p>Class, subject, and responsible teacher</p></div>${action('class_subjects', 'Assignment')}</header><div class="panel-body">${records('class_subjects').length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Class</th><th>Subject</th><th>Teacher</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>${records('class_subjects').map(item => `<tr><td>${escapeHtml(className(item.class_id))}</td><td>${escapeHtml(subjectName(item.subject_id))}</td><td>${escapeHtml(teacherName(item.teacher_id))}</td>${canManage ? `<td><button class="text-button" data-action="delete" data-table="class_subjects" data-id="${escapeHtml(item.id)}">Remove</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">No teacher assignments yet.</div>'}</div></section>`;
+  };
+
+  const attendanceView = () => {
+    const school = currentSchool();
+    if (state.attendanceViewMode === 'monthly') return monthlyAttendanceView(school);
+    const assignment = attendanceAssignment();
+    const classIds = state.profile.role === 'teacher'
+      ? new Set(records('class_subjects').filter(row => row.teacher_id === state.profile.teacher_id).map(row => row.class_id))
+      : null;
+    const classes = records('classes').filter(row => !classIds || classIds.has(row.id));
+    const classOptions = `<option value="">All classes</option>${classes.map(row => `<option value="${escapeHtml(row.id)}" ${state.attendanceClass === row.id ? 'selected' : ''}>${escapeHtml(row.name)}</option>`).join('')}`;
+    const subjectAssignments = permittedAttendanceAssignments();
+    const assignmentOptions = `<option value="">Class register (no subject)</option>${subjectAssignments.map(row => `<option value="${escapeHtml(row.id)}" ${state.attendanceAssignmentId === row.id ? 'selected' : ''}>${escapeHtml(className(row.class_id))} · ${escapeHtml(subjectName(row.subject_id))}</option>`).join('')}`;
+    const permitted = new Set(permittedStudents());
+    const rows = attendanceStudents();
+    const attendanceRecords = assignment ? records('subject_attendance') : records('attendance');
+    const attendanceIndex = new Map(attendanceRecords.filter(row =>
+      row.attendance_date === state.attendanceDate && permitted.has(row.student_id) &&
+      (!state.attendanceClass || row.class_id === state.attendanceClass) &&
+      (!assignment || row.subject_id === assignment.subject_id))
+      .map(row => [row.student_id, row]));
+    const canTakeAttendance = isManager() || (state.profile.role === 'teacher' && assignment?.teacher_id === state.profile.teacher_id);
+    const dateValue = new Date(`${state.attendanceDate}T12:00:00`);
+    const weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }).format(dateValue);
+    const rangeLength = state.attendanceRangeMode && state.attendanceRangeStart && state.attendanceRangeEnd
+      ? Math.round((new Date(`${state.attendanceRangeEnd}T12:00:00`) - new Date(`${state.attendanceRangeStart}T12:00:00`)) / 86400000) + 1
+      : 1;
+    const statusOptions = [
+      { value: 'present', short: 'P', label: 'Present' },
+      { value: 'absent', short: 'A', label: 'Absent' },
+      { value: 'leave', short: 'L', label: 'Leave' },
+      { value: 'holiday', short: 'H', label: 'Holiday' }
+    ];
+    const counts = statusOptions.map(status => ({
+      ...status,
+      count: rows.filter(student => (state.attendanceStatuses[student.id] || attendanceIndex.get(student.id)?.status || 'present') === status.value).length
+    }));
+    const session = school.academic_year || String(new Date().getFullYear());
+    const selectedName = state.attendanceClass
+      ? records('classes').find(row => row.id === state.attendanceClass)?.name || 'Selected class'
+      : 'All classes';
+    return `<section class="attendance-register">
+      <div class="attendance-view-switch"><div><p class="eyebrow">${assignment ? 'SUBJECT ATTENDANCE' : 'CLASS ATTENDANCE'}</p><h1>Attendance</h1><p>${assignment ? 'A separate register maintained by the assigned subject teacher.' : 'Record and review class attendance.'}</p>${assignment ? `<span class="attendance-subject-context">Subject register: <strong>${escapeHtml(subjectName(assignment.subject_id))}</strong> · ${escapeHtml(className(assignment.class_id))} · Teacher: ${escapeHtml(teacherName(assignment.teacher_id))}</span>` : ''}</div><div class="attendance-view-buttons"><button type="button" class="button ${state.attendanceViewMode === 'daily' ? 'button-primary' : 'button-outline'}" data-attendance-view="daily">Daily register</button><button type="button" class="button ${state.attendanceViewMode === 'monthly' ? 'button-primary' : 'button-outline'}" data-attendance-view="monthly">Monthly sheet</button></div></div>
+      <div class="attendance-control-card">
+        <div class="attendance-filter-grid">
+          <label class="attendance-filter"><span>Academic session</span><select id="attendanceSession" class="field-select"><option>${escapeHtml(session)}</option></select></label>
+          <label class="attendance-filter"><span>Class cluster</span><select id="attendanceClass" class="field-select">${classOptions}</select></label>
+          <label class="attendance-filter"><span>Subject register</span><select id="attendanceAssignment" class="field-select">${assignmentOptions}</select></label>
+          <div class="attendance-date-group"><span class="attendance-filter-caption">Temporal date node</span><div class="attendance-date-controls">
+            <button class="date-step" type="button" data-date-step="-1" aria-label="Previous day">‹</button>
+            <input id="attendanceDate" class="field-input" type="date" value="${escapeHtml(state.attendanceDate)}" aria-label="Attendance date">
+            <button class="date-step" type="button" data-date-step="1" aria-label="Next day">›</button>
+            <span class="weekday-chip">${escapeHtml(weekday)}</span>
+          </div></div>
+        </div>
+        ${canTakeAttendance ? `<div class="ledger-control">
+          <div class="ledger-copy"><span class="ledger-bolt">↯</span><div><strong>Batch ledger control</strong><small>Mark the entire class at once</small></div></div>
+          <div class="ledger-actions">${statusOptions.map(status => `<button type="button" class="ledger-action" data-batch-status="${status.value}" title="Mark all ${escapeHtml(selectedName)} students ${escapeHtml(status.label.toLowerCase())}">${status.short}</button>`).join('')}
+            <label class="range-mode-toggle"><input id="attendanceRangeMode" type="checkbox" ${state.attendanceRangeMode ? 'checked' : ''}> Range mode</label>
+          </div>
+        </div>
+        ${state.attendanceRangeMode ? `<div class="attendance-range-panel"><span>Apply marked statuses to each date in the selected range</span><label>From <input id="attendanceRangeStart" class="field-input" type="date" value="${escapeHtml(state.attendanceRangeStart)}"></label><label>To <input id="attendanceRangeEnd" class="field-input" type="date" value="${escapeHtml(state.attendanceRangeEnd)}"></label><strong>${rangeLength > 0 ? `${rangeLength} day${rangeLength === 1 ? '' : 's'}` : 'Choose a valid date range'}</strong></div>` : ''}` : ''}
+        ${state.profile.role === 'teacher' && !assignment ? '<p class="subject-register-notice">Choose one of your assigned subject registers before entering attendance. Each subject is saved separately.</p>' : ''}
+      </div>
+      <div class="attendance-list">
+        <div class="attendance-list-header"><span>${assignment ? `${escapeHtml(subjectName(assignment.subject_id))} · ${escapeHtml(className(assignment.class_id))} students` : 'Class students · Daily marking mode'}</span><span>Status</span></div>
+        ${rows.length ? rows.map((student, index) => {
+          const attendanceRecord = attendanceIndex.get(student.id);
+          const status = state.attendanceStatuses[student.id] || attendanceRecord?.status || 'present';
+          const selectedStatus = statusOptions.find(option => option.value === status) || statusOptions[0];
+          return `<article class="attendance-student-row ${canTakeAttendance ? 'editable' : ''}" data-row-student="${escapeHtml(student.id)}">
+            <span class="attendance-row-number">#${index + 1}</span>
+            <div class="attendance-student-info"><strong>${escapeHtml(student.full_name)}</strong><div class="attendance-student-meta"><span class="attendance-id">ID: ${escapeHtml(student.student_id || 'Not assigned')}</span><span class="attendance-gender">${escapeHtml((student.gender || '—').slice(0, 1))}</span><span>Roll: ${escapeHtml(student.roll_number || String(index + 1).padStart(2, '0'))}</span><span class="attendance-status-label status-${status}">${escapeHtml(selectedStatus.label)}</span></div></div>
+            <div class="attendance-status-choices">${statusOptions.map(option => `<button type="button" class="attendance-choice status-${option.value} ${status === option.value ? 'selected' : ''}" data-student-status="${escapeHtml(option.value)}" data-student="${escapeHtml(student.id)}" aria-pressed="${status === option.value}" aria-label="${escapeHtml(option.label)} for ${escapeHtml(student.full_name)}" ${canTakeAttendance ? '' : 'disabled'}><strong>${option.short}</strong><small>${escapeHtml(option.label)}</small></button>`).join('')}</div>
+          </article>`;
+        }).join('') : '<div class="empty-state"><strong>No students in this class</strong>Add students before taking attendance.</div>'}
+      </div>
+      ${canTakeAttendance && rows.length ? `<div class="attendance-save-bar"><div class="attendance-summary">${counts.map(item => `<span class="attendance-summary-item status-${item.value}"><i></i>${escapeHtml(item.label)} <strong>${item.count}</strong></span>`).join('')}<span class="attendance-total">${rows.length} students${state.attendanceRangeMode && rangeLength > 0 ? ` · ${rangeLength} days` : ''}</span></div><button id="saveAttendance" class="button button-primary">${state.attendanceRangeMode ? 'Save attendance range' : 'Save daily register'} <span aria-hidden="true">→</span></button></div>` : ''}
+    </section>`;
+  };
+
+  const monthlyAttendanceView = school => {
+    const assignment = attendanceAssignment();
+    const [yearText, monthText] = state.attendanceMonth.split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const validMonth = /^\d{4}-\d{2}$/.test(state.attendanceMonth) && month >= 1 && month <= 12;
+    const dayCount = validMonth ? new Date(year, month, 0).getDate() : 0;
+    const days = Array.from({ length: dayCount }, (_, index) => {
+      const date = new Date(year, month - 1, index + 1);
+      return { number: index + 1, date, weekend: date.getDay() === 0 || date.getDay() === 6 };
+    });
+    const permitted = new Set(permittedStudents());
+    const students = records('students').filter(student => permitted.has(student.id) &&
+      student.class_id && (!state.attendanceClass || student.class_id === state.attendanceClass) &&
+      (!assignment || student.class_id === assignment.class_id));
+    const studentIds = new Set(students.map(student => student.id));
+    const monthStart = validMonth ? `${state.attendanceMonth}-01` : '';
+    const monthEnd = validMonth ? `${state.attendanceMonth}-${String(dayCount).padStart(2, '0')}` : '';
+    const attendanceRecords = assignment ? records('subject_attendance') : records('attendance');
+    const monthRecords = attendanceRecords.filter(row =>
+      row.attendance_date >= monthStart && row.attendance_date <= monthEnd &&
+      studentIds.has(row.student_id) &&
+      (!assignment || row.subject_id === assignment.subject_id));
+    const attendanceByStudent = new Map();
+    for (const row of monthRecords) {
+      if (!attendanceByStudent.has(row.student_id)) attendanceByStudent.set(row.student_id, new Map());
+      attendanceByStudent.get(row.student_id).set(Number(row.attendance_date.slice(-2)), row.status);
+    }
+    const statusCodes = { present: 'P', absent: 'A', leave: 'L', holiday: 'H' };
+    const countsByDay = days.map(day => students.reduce((count, student) =>
+      count + (attendanceByStudent.get(student.id)?.get(day.number) === 'present' ? 1 : 0), 0));
+    const selectedClass = records('classes').find(row => row.id === state.attendanceClass);
+    const classIds = state.profile.role === 'teacher'
+      ? new Set(records('class_subjects').filter(row => row.teacher_id === state.profile.teacher_id).map(row => row.class_id))
+      : null;
+    const classes = records('classes').filter(row => !classIds || classIds.has(row.id));
+    const classOptions = `<option value="">All classes</option>${classes.map(row =>
+      `<option value="${escapeHtml(row.id)}" ${state.attendanceClass === row.id ? 'selected' : ''}>${escapeHtml(row.name)}</option>`).join('')}`;
+    const subjectAssignments = permittedAttendanceAssignments();
+    const assignmentOptions = `<option value="">Class register (no subject)</option>${subjectAssignments.map(row =>
+      `<option value="${escapeHtml(row.id)}" ${state.attendanceAssignmentId === row.id ? 'selected' : ''}>${escapeHtml(className(row.class_id))} · ${escapeHtml(subjectName(row.subject_id))}</option>`).join('')}`;
+    const assignedTeacherIds = assignment
+      ? [assignment.teacher_id]
+      : selectedClass
+      ? [...new Set(records('class_subjects').filter(row => row.class_id === selectedClass.id).map(row => row.teacher_id))]
+      : [];
+    const assignedTeachers = assignedTeacherIds.map(id => records('teachers').find(row => row.id === id)?.full_name).filter(Boolean);
+    const monthLabel = validMonth
+      ? new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
+      : 'Choose a month';
+    const monthName = validMonth ? new Intl.DateTimeFormat('en', { month: 'long' }).format(new Date(year, month - 1, 1)) : '';
+    const session = school.academic_year || String(new Date().getFullYear());
+    const schoolLogo = state.imageUrls[school.logo_path] || '';
+    return `<section class="monthly-attendance-page ${state.attendancePrintOrientation === 'portrait' ? 'print-portrait' : 'print-landscape'}">
+      <div class="monthly-export-toolbar">
+        <strong><span aria-hidden="true">▤</span> Official Export Node</strong>
+        <div class="monthly-export-actions">
+          <div class="orientation-toggle" aria-label="Print orientation">
+            <button type="button" class="${state.attendancePrintOrientation === 'portrait' ? 'selected' : ''}" data-print-orientation="portrait">Portrait</button>
+            <button type="button" class="${state.attendancePrintOrientation === 'landscape' ? 'selected' : ''}" data-print-orientation="landscape">Landscape</button>
+          </div>
+          <button type="button" class="button button-outline" data-attendance-view="daily">‹ Register View</button>
+          <button type="button" class="button button-primary print-sheet-button" data-print-attendance>▣ Print Transcript</button>
+        </div>
+      </div>
+      <div class="monthly-filter-row">
+        <label class="attendance-filter">Class cluster<select id="attendanceClass" class="field-select">${classOptions}</select></label>
+        <label class="attendance-filter">Subject register<select id="attendanceAssignment" class="field-select">${assignmentOptions}</select></label>
+        <label class="attendance-filter">Month<input id="attendanceMonth" class="field-input" type="month" value="${escapeHtml(validMonth ? state.attendanceMonth : '')}"></label>
+        <span>Academic session: <strong>${escapeHtml(session)}</strong></span>
+      </div>
+      <div class="monthly-sheet">
+        <header class="monthly-sheet-heading">
+          <div class="monthly-school-brand"><span class="monthly-logo">${schoolLogo ? `<img src="${escapeHtml(schoolLogo)}" alt="">` : `<img src="${BRAND_LOGO}" alt="">`}</span><div><strong>${escapeHtml(SCHOOL_NAME)}</strong><span>${assignment ? `${escapeHtml(subjectName(assignment.subject_id))} · Subject Attendance Report` : 'Monthly Attendance Report'}</span></div></div>
+          <strong class="monthly-date-stamp">${escapeHtml(monthLabel)}</strong>
+        </header>
+        <div class="monthly-class-meta">
+          <strong>CLASS: ${escapeHtml(selectedClass?.name || 'ALL CLASSES')}</strong>
+          <strong>${assignment ? 'SUBJECT TEACHER' : 'ASSIGNED TEACHER(S)'}: ${escapeHtml(assignedTeachers.length ? assignedTeachers.join(', ') : 'Not assigned')}</strong>
+          <strong>MONTH: ${escapeHtml(monthName.toUpperCase() || '—')}</strong>
+          <strong>COUNT: ${students.length} CANDIDATES</strong>
+        </div>
+        ${students.length && validMonth ? `<div class="monthly-table-scroll"><table class="monthly-register-table">
+          <thead><tr><th class="monthly-student-heading" rowspan="2">Student Name</th><th class="monthly-gender-heading" rowspan="2">G</th>${days.map(day => `<th class="monthly-day-heading ${day.weekend ? 'weekend' : ''}">${day.number}</th>`).join('')}<th rowspan="2">W</th><th rowspan="2">H</th><th rowspan="2">P</th><th rowspan="2">L</th><th rowspan="2">A</th></tr><tr>${days.map(day => `<th class="monthly-weekday-heading ${day.weekend ? 'weekend' : ''}">${new Intl.DateTimeFormat('en', { weekday: 'short' }).format(day.date).slice(0, 1)}</th>`).join('')}</tr></thead>
+          <tbody>${students.map(student => {
+            const studentDays = attendanceByStudent.get(student.id) || new Map();
+            const totals = { present: 0, absent: 0, leave: 0, holiday: 0 };
+            const dailyCells = days.map(day => {
+              const status = studentDays.get(day.number);
+              if (status in totals) totals[status]++;
+              const code = statusCodes[status] || (!status && day.weekend ? 'S' : '');
+              return `<td class="monthly-status-cell ${status ? `status-${status}` : day.weekend ? 'status-weekend' : ''}" title="${status ? escapeHtml(status[0].toUpperCase() + status.slice(1)) : day.weekend ? 'Weekend' : 'No record'}">${code}</td>`;
+            }).join('');
+            return `<tr><td class="monthly-student-cell"><strong>${escapeHtml(student.full_name)}</strong><small>ID: ${escapeHtml(student.student_id || 'Not assigned')}</small></td><td class="monthly-gender-cell">${escapeHtml((student.gender || '—').slice(0, 1))}</td>${dailyCells}<td>${totals.present + totals.absent + totals.leave}</td><td>${totals.holiday}</td><td>${totals.present}</td><td>${totals.leave}</td><td>${totals.absent}</td></tr>`;
+          }).join('')}</tbody>
+          <tfoot><tr><th colspan="2" class="daily-present-label">DAILY PRESENT</th>${countsByDay.map((count, index) => `<td class="${days[index].weekend ? 'weekend' : ''}">${count || ''}</td>`).join('')}<td colspan="5"></td></tr></tfoot>
+        </table></div><p class="monthly-key"><strong>KEY:</strong> P Present · A Absent · L Leave · H Holiday · S Weekend · W Working entries</p>` : `<div class="empty-state"><strong>${validMonth ? 'No students in this class' : 'Choose a month'}</strong>${validMonth ? 'Add students and assign them to a class to print a register.' : 'Select a valid month to display the attendance sheet.'}</div>`}
+        <footer class="monthly-signatures"><div><span></span><strong>Class Teacher Signature</strong><small>DATE: __________________</small></div><div><span></span><strong>Principal Signature</strong><small>DATE: __________________</small></div></footer>
+      </div>
+    </section>`;
+  };
+
+  const gradebookAssignments = () => {
+    const studentIds = new Set(permittedStudents());
+    return records('class_subjects').filter(assignment => {
+      if (isManager()) return true;
+      if (state.profile.role === 'teacher') return assignment.teacher_id === state.profile.teacher_id;
+      return records('subject_enrollments').some(enrollment =>
+        enrollment.assignment_id === assignment.id && studentIds.has(enrollment.student_id));
+    });
+  };
+
+  const normalizedTerm = term => /^(2|second)/i.test(String(term || '').trim()) ? '2nd Term' : '1st Term';
+  const termMonths = {
+    '1st Term': [{ month: 9, label: 'September' }, { month: 10, label: 'October' }, { month: 11, label: 'November' }],
+    '2nd Term': [{ month: 2, label: 'February' }, { month: 3, label: 'March' }, { month: 4, label: 'April' }]
+  };
+  const gradeForPercentage = percentage => percentage >= 90 ? 'A*' : percentage >= 80 ? 'A' : percentage >= 70 ? 'B' : percentage >= 60 ? 'C' : percentage >= 50 ? 'D' : percentage >= 40 ? 'E' : 'U';
+  const formatGradebookNumber = value => Number(value.toFixed(2)).toString();
+  const isAbsentEntry = value => /^(a|absent)$/i.test(String(value || '').trim());
+  const enteredScore = value => {
+    const text = String(value || '').trim();
+    if (!text || isAbsentEntry(text)) return null;
+    const score = Number(text);
+    return Number.isFinite(score) ? score : NaN;
+  };
+
+  const gradebookRowTotals = row => {
+    const terms = [...new Set([...row.querySelectorAll('.gradebook-score')].map(input => input.dataset.term))];
+    terms.forEach(term => {
+      const inputs = [...row.querySelectorAll('.gradebook-score')].filter(input => input.dataset.term === term);
+      const monthlyInputs = inputs.filter(input => input.dataset.category === 'monthly');
+      const examInputs = inputs.filter(input => input.dataset.category === 'exam');
+      const enteredMonthly = monthlyInputs.map(input => enteredScore(input.value)).filter(score => score !== null && Number.isFinite(score));
+      const monthlyComplete = Number(row.querySelector(`[data-monthly-setup="${term}"]`)?.dataset.monthlyCount || 0) === 3;
+      const marksIn60 = monthlyComplete ? enteredMonthly.reduce((sum, score) => sum + score, 0) / enteredMonthly.length * 3 || 0 : null;
+      const testPercentage = marksIn60 === null ? null : marksIn60 / 60 * 100;
+      const enteredExams = examInputs.map(input => ({ score: enteredScore(input.value), max: Number(input.max) }))
+        .filter(item => item.score !== null && Number.isFinite(item.score));
+      const examPossible = enteredExams.reduce((sum, item) => sum + item.max, 0);
+      const examPercentage = examPossible ? enteredExams.reduce((sum, item) => sum + item.score, 0) / examPossible * 100 : null;
+      const finalPercentage = testPercentage === null || examPercentage === null ? null : (testPercentage + examPercentage) / 2;
+      const monthlyCell = row.querySelector(`[data-monthly-total="${term}"]`);
+      const examCell = row.querySelector(`[data-exam-percentage="${term}"]`);
+      const percentageCell = row.querySelector(`[data-final-percentage="${term}"]`);
+      const gradeCell = row.querySelector(`[data-grade="${term}"]`);
+      if (monthlyCell) monthlyCell.textContent = marksIn60 === null ? '—' : `${formatGradebookNumber(marksIn60)} / 60`;
+      if (examCell) examCell.textContent = examPercentage === null ? '—' : `${formatGradebookNumber(examPercentage)}%`;
+      if (percentageCell) percentageCell.textContent = finalPercentage === null ? '—' : `${finalPercentage.toFixed(1).replace(/\.0$/, '')}%`;
+      if (gradeCell) gradeCell.textContent = finalPercentage === null ? '—' : gradeForPercentage(finalPercentage);
+    });
+  };
+
+  const assessmentsView = () => {
+    const assignments = gradebookAssignments();
+    const selectedAssignment = assignments.find(row => row.id === state.assessmentAssignmentId) || assignments[0] || null;
+    if (selectedAssignment && selectedAssignment.id !== state.assessmentAssignmentId) state.assessmentAssignmentId = selectedAssignment.id;
+    const availableClasses = [...new Map(assignments.map(assignment => {
+      const klass = records('classes').find(row => row.id === assignment.class_id);
+      return [klass?.id, klass];
+    }).filter(([id, klass]) => id && klass)).values()];
+    const classId = selectedAssignment?.class_id || '';
+    const availableAssignments = assignments.filter(row => row.class_id === classId);
+    const selectedTerm = state.assessmentTerm;
+    const canManage = isManager();
+    const canManageRoster = Boolean(selectedAssignment &&
+      (isManager() || (state.profile.role === 'teacher' && selectedAssignment.teacher_id === state.profile.teacher_id)));
+    const canMark = canManageRoster;
+    const permitted = new Set(permittedStudents());
+    const classStudents = selectedAssignment
+      ? records('students').filter(student => student.class_id === selectedAssignment.class_id && permitted.has(student.id))
+      : [];
+    const enrolledIds = new Set(records('subject_enrollments')
+      .filter(item => item.assignment_id === selectedAssignment?.id)
+      .map(item => item.student_id));
+    const enrolledStudents = classStudents.filter(student => enrolledIds.has(student.id));
+    const visibleStudents = state.assessmentShowWholeClass ? classStudents : enrolledStudents;
+    const termsToShow = state.assessmentShowBothTerms ? ['1st Term', '2nd Term'] : [selectedTerm];
+    const assessmentRows = selectedAssignment
+      ? permittedAssessments().filter(row =>
+        row.class_id === selectedAssignment.class_id &&
+        row.subject_id === selectedAssignment.subject_id &&
+        termsToShow.includes(normalizedTerm(row.term)))
+        .sort((a, b) => a.assessment_date.localeCompare(b.assessment_date) || a.title.localeCompare(b.title))
+      : [];
+    const termGroups = termsToShow.map(term => {
+      const rows = assessmentRows.filter(row => normalizedTerm(row.term) === term);
+      return {
+        term,
+        months: termMonths[term].map(month => ({
+          ...month,
+          assessment: rows.find(row => row.assessment_type === 'Monthly test' &&
+            Number(String(row.assessment_date || '').slice(5, 7)) === month.month) || null
+        })),
+        exams: rows.filter(row => row.assessment_type === 'Term exam')
+      };
+    });
+    const classOptions = availableClasses.map(row =>
+      `<option value="${escapeHtml(row.id)}" ${row.id === classId ? 'selected' : ''}>${escapeHtml(row.name)}</option>`).join('');
+    const subjectOptions = availableAssignments.map(row =>
+      `<option value="${escapeHtml(row.id)}" ${row.id === selectedAssignment?.id ? 'selected' : ''}>${escapeHtml(subjectName(row.subject_id))}</option>`).join('');
+    const termButtons = ['1st Term', '2nd Term'].map(term =>
+      `<button type="button" class="gradebook-term-button ${!state.assessmentShowBothTerms && selectedTerm === term ? 'selected' : ''}" data-gradebook-term="${term}" aria-pressed="${!state.assessmentShowBothTerms && selectedTerm === term}">${term}</button>`).join('');
+    const addAssessment = canMark && selectedAssignment
+      ? '<button type="button" class="button button-primary button-small" data-action="add" data-table="assessments">＋ New assessment</button>'
+      : '';
+    const markLookup = new Map(records('marks').map(mark => [`${mark.assessment_id}:${mark.student_id}`, mark]));
+    const tableRows = visibleStudents.map((student, index) => {
+      const isEnrolled = enrolledIds.has(student.id);
+      return `<tr data-gradebook-row><td class="gradebook-row-number">#${index + 1}</td><td class="gradebook-student"><strong>${escapeHtml(student.full_name)}</strong><small>ID: ${escapeHtml(student.student_id || 'Not assigned')} · Roll: ${escapeHtml(student.roll_number || String(index + 1).padStart(2, '0'))}</small>${!isEnrolled ? '<span class="gradebook-not-enrolled">Not enrolled</span>' : ''}</td><td class="gradebook-gender">${escapeHtml((student.gender || '—').slice(0, 1))}</td>${termGroups.map(group => {
+        const groupMonthly = group.months.map(month => {
+          if (!month.assessment) return `<td class="gradebook-not-setup" title="${month.label} assessment has not been set up">Not set</td>`;
+          const mark = markLookup.get(`${month.assessment.id}:${student.id}`);
+          const editable = canMark && isEnrolled;
+          return `<td><input class="field-input gradebook-score" data-assessment-id="${escapeHtml(month.assessment.id)}" data-student="${escapeHtml(student.id)}" data-category="monthly" data-term="${group.term}" type="text" inputmode="decimal" value="${mark ? escapeHtml(mark.score) : ''}" placeholder="A / score" aria-label="${month.label} score or absent for ${escapeHtml(student.full_name)}" ${editable ? '' : 'disabled'}></td>`;
+        }).join('');
+        const groupExams = group.exams.map(assessment => {
+          const mark = markLookup.get(`${assessment.id}:${student.id}`);
+          const editable = canMark && isEnrolled;
+          return `<td><input class="field-input gradebook-score" data-assessment-id="${escapeHtml(assessment.id)}" data-student="${escapeHtml(student.id)}" data-category="exam" data-term="${group.term}" type="number" min="0" max="${Number(assessment.max_marks)}" step="0.01" value="${mark ? escapeHtml(mark.score) : ''}" placeholder="—" aria-label="${escapeHtml(assessment.title)} score for ${escapeHtml(student.full_name)}" ${editable ? '' : 'disabled'}></td>`;
+        }).join('');
+        const monthlyAssessments = group.months.map(month => month.assessment).filter(Boolean);
+        const monthlyScores = group.months
+          .map(month => month.assessment && markLookup.get(`${month.assessment.id}:${student.id}`))
+          .filter(Boolean)
+          .map(mark => Number(mark.score));
+        const marksIn60 = monthlyAssessments.length === 3
+          ? (monthlyScores.length ? monthlyScores.reduce((sum, score) => sum + score, 0) / monthlyScores.length * 3 : 0)
+          : null;
+        const markedExams = group.exams.map(assessment => ({
+          assessment,
+          mark: markLookup.get(`${assessment.id}:${student.id}`)
+        })).filter(item => item.mark);
+        const examMax = markedExams.reduce((sum, item) => sum + Number(item.assessment.max_marks), 0);
+        const examEarned = markedExams.reduce((sum, item) => sum + Number(item.mark.score), 0);
+        const examPercentage = examMax ? examEarned / examMax * 100 : null;
+        const testPercentage = marksIn60 === null ? null : marksIn60 / 60 * 100;
+        const finalPercentage = testPercentage === null || examPercentage === null
+          ? null
+          : (testPercentage + examPercentage) / 2;
+        return `${groupMonthly}<td class="gradebook-monthly-sum" data-monthly-total="${group.term}">${marksIn60 === null ? '—' : `${formatGradebookNumber(marksIn60)} / 60`}</td>${groupExams}<td class="gradebook-exam-percentage" data-exam-percentage="${group.term}">${examPercentage === null ? '—' : `${formatGradebookNumber(examPercentage)}%`}</td><td class="gradebook-percentage" data-final-percentage="${group.term}">${finalPercentage === null ? '—' : `${finalPercentage.toFixed(1).replace(/\.0$/, '')}%`}</td><td class="gradebook-grade" data-grade="${group.term}">${finalPercentage === null ? '—' : gradeForPercentage(finalPercentage)}</td><td hidden data-monthly-setup="${group.term}" data-monthly-count="${monthlyAssessments.length}"></td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    const groupHeaders = `<tr><th rowspan="2">S#</th><th rowspan="2">Student</th><th rowspan="2">G</th>${termGroups.map(group => `<th colspan="${7 + group.exams.length}">${group.term}</th>`).join('')}</tr><tr>${termGroups.map(group => `${group.months.map(month => `<th>${month.label}<small>${month.assessment ? 'Max 20' : 'Not set'}</small></th>`).join('')}<th>Marks in 60</th>${group.exams.map(assessment => `<th>${escapeHtml(assessment.title)}<small>Max ${escapeHtml(assessment.max_marks)}</small></th>`).join('')}<th>Exam %</th><th>Final %</th><th>Grade</th>`).join('')}</tr>`;
+    const tableColumnCount = 3 + termGroups.reduce((total, group) => total + 7 + group.exams.length, 0);
+    const incompleteTerms = termGroups.filter(group => group.months.some(month => !month.assessment));
+    const enrollmentEditor = state.assessmentEnrollOpen && canManageRoster && selectedAssignment
+      ? `<section class="gradebook-enrollment-editor"><div class="gradebook-editor-heading"><div><strong>Assign students to ${escapeHtml(subjectName(selectedAssignment.subject_id))}</strong><small>Select the students who take this subject.</small></div><button type="button" class="button button-outline button-small" data-gradebook-enrollment-toggle>Close</button></div><div class="gradebook-enrollment-list">${classStudents.map(student => `<label><input type="checkbox" data-enroll-student value="${escapeHtml(student.id)}" ${enrolledIds.has(student.id) ? 'checked' : ''}><span><strong>${escapeHtml(student.full_name)}</strong><small>${escapeHtml(student.student_id || 'No student ID')}</small></span></label>`).join('')}</div><button type="button" class="button button-primary button-small" data-save-enrollment>Save subject students</button></section>`
+      : '';
+    const assessmentManager = canManageRoster && assessmentRows.length
+      ? `<details class="gradebook-assessment-manager"><summary>Assessment setup · ${assessmentRows.length} items</summary><div class="table-wrap"><table class="data-table"><thead><tr><th>Assessment</th><th>Type</th><th>Date</th><th>Maximum</th><th></th></tr></thead><tbody>${assessmentRows.map(row => `<tr><td>${escapeHtml(row.title)}</td><td>${escapeHtml(row.assessment_type)}</td><td>${escapeHtml(row.assessment_date)}</td><td>${escapeHtml(row.max_marks)}</td><td><button class="text-button" data-action="edit" data-table="assessments" data-id="${escapeHtml(row.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="assessments" data-id="${escapeHtml(row.id)}">Remove</button></td></tr>`).join('')}</tbody></table></div></details>`
+      : '';
+    const session = currentSchool().academic_year || String(new Date().getFullYear());
+    const assignmentTeacher = selectedAssignment ? teacherName(selectedAssignment.teacher_id) : '';
+    const viewControls = selectedAssignment
+      ? `<div class="gradebook-roster-bar"><div class="gradebook-roster-copy"><span aria-hidden="true">♟</span><div><strong>Listing <b>${enrolledStudents.length}</b> of ${classStudents.length} students enrolled in ${escapeHtml(subjectName(selectedAssignment.subject_id))}</strong><small>${state.assessmentShowWholeClass ? 'Entire class shown. Unenrolled students are view-only.' : 'Unenrolled class members are hidden.'}${assignmentTeacher ? ` · Subject teacher: ${escapeHtml(assignmentTeacher)}` : ''}</small></div></div><div class="gradebook-roster-actions">${canManageRoster ? `<button type="button" class="button button-primary button-small" data-gradebook-enrollment-toggle>Assign students (${enrolledStudents.length}/${classStudents.length})</button>` : ''}<button type="button" class="button button-outline button-small" data-gradebook-view-all>${state.assessmentShowWholeClass ? 'Show enrolled only' : `View entire class (${classStudents.length})`}</button></div></div>${enrollmentEditor}`
+      : '<div class="empty-state"><strong>No subject assignment available</strong>Ask an administrator to assign a subject and teacher to this class.</div>';
+    const markableAssessmentCount = assessmentRows.length;
+    return `${pageHeading('ASSESSMENTS · SUBJECT GRADEBOOK', 'Test & exam marks entry', 'Enter term marks in a separate gradebook for each subject teacher.', addAssessment)}
+      <section class="gradebook-filter-card">
+        <label class="attendance-filter"><span>Session</span><select class="field-select" disabled><option>${escapeHtml(session)}</option></select></label>
+        <div class="gradebook-term-picker" role="group" aria-label="Select academic term">${termButtons}<button type="button" class="gradebook-both-button ${state.assessmentShowBothTerms ? 'selected' : ''}" data-gradebook-both aria-pressed="${state.assessmentShowBothTerms}">Toggle both terms</button></div>
+        <label class="attendance-filter"><span>Class cluster</span><select id="gradebookClass" class="field-select" ${availableClasses.length ? '' : 'disabled'}>${classOptions || '<option value="">No classes assigned</option>'}</select></label>
+        <label class="attendance-filter"><span>Subject node</span><select id="gradebookSubject" class="field-select" ${availableAssignments.length ? '' : 'disabled'}>${subjectOptions || '<option value="">No subject assignments</option>'}</select></label>
+      </section>
+      ${viewControls}
+      ${selectedAssignment ? `<section class="gradebook-panel panel"><header class="gradebook-panel-heading"><div><h2>${escapeHtml(className(selectedAssignment.class_id))} · ${escapeHtml(subjectName(selectedAssignment.subject_id))} marks</h2><p>${state.assessmentShowBothTerms ? 'Both terms' : selectedTerm} · Monthly scores convert to 60; final % is the average of test % and exam %.</p></div><div>${canManageRoster && markableAssessmentCount ? '<button type="button" id="saveMarks" class="button button-primary button-small">Save marks</button>' : ''}</div></header>${incompleteTerms.length ? `<div class="callout gradebook-setup-note"><strong>Monthly setup incomplete.</strong> Add one 20-mark test for each month before the “Marks in 60” total and final grade can be calculated for ${incompleteTerms.map(group => group.term).join(' and ')}.</div>` : ''}<div class="gradebook-table-wrap"><table class="gradebook-table"><thead>${groupHeaders}</thead><tbody>${tableRows || `<tr><td colspan="${tableColumnCount}" class="empty-state">No enrolled students in this view.</td></tr>`}</tbody></table></div><footer class="gradebook-footer"><span>Blank, A, or Absent monthly entry = absent. Attended test marks are scaled to 60.</span><span>A* ≥ 90 · A ≥ 80 · B ≥ 70 · C ≥ 60 · D ≥ 50 · E ≥ 40 · U &lt; 40 · Final % = (test % + exam %) ÷ 2</span></footer></section>` : ''}
+      ${assessmentManager}`;
+  };
+
+  const reportsView = () => {
+    const marks = permittedMarks();
+    const average = marks.length ? Math.round(marks.reduce((sum, row) => sum + Number(row.score), 0) / marks.length) : 0;
+    const studentIds = new Set(permittedStudents());
+    const attendance = records('attendance').filter(row => studentIds.has(row.student_id));
+    const present = attendance.filter(row => row.status === 'present').length;
+    const attendanceRate = attendance.length ? Math.round(present / attendance.length * 100) : 0;
+    return `${pageHeading('ACADEMIC INSIGHTS', 'Reports', 'A quick summary of attendance and assessment performance.', '<button class="button button-primary button-small" data-action="export">Download CSV report</button>')}
+      <div class="callout"><strong>Privacy reminder</strong> · Reports may contain student information. Download only on a trusted device and share securely.</div>
+      <div class="metrics-grid">
+        ${metric('Average score', `${average}%`, '↗', `${marks.length} marks recorded`)}
+        ${metric('Attendance rate', `${attendanceRate}%`, '✓', `${present} present records`)}
+        ${metric('Assessments', records('assessments').length, '▤', 'Monthly tests and term exams')}
+        ${metric('Classes', records('classes').length, '▦', `${records('subjects').length} subjects`)}
+      </div>
+      <section class="panel" style="margin-top:16px"><header class="panel-header"><div><h2>Student results</h2><p>Recorded assessment scores and class averages</p></div></header><div class="panel-body">${marks.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Class</th><th>Assessment</th><th>Score</th><th>Result</th></tr></thead><tbody>${marks.map(mark => { const test = records('assessments').find(row => row.id === mark.assessment_id); const student = records('students').find(row => row.id === mark.student_id); return student && test ? `<tr><td>${escapeHtml(student.full_name)}</td><td>${escapeHtml(className(student.class_id))}</td><td>${escapeHtml(test.title)}</td><td>${escapeHtml(mark.score)} / ${escapeHtml(test.max_marks)}</td><td><span class="status-pill">${Math.round(mark.score / test.max_marks * 100)}%</span></td>` : ''; }).join('')}</tbody></table></div>` : '<div class="empty-state">Marks appear here after teachers record assessment results.</div>'}</div></section>`;
+  };
+
+  const schoolSettingsView = () => {
+    const school = currentSchool();
+    const logo = school.logo_preview || state.imageUrls[school.logo_path] || '';
+    return `${pageHeading('SCHOOL PROFILE', 'School settings', 'Update your school name and logo.', '')}
+      <section class="panel"><header class="panel-header"><div><h2>School identity</h2><p>The logo appears in the school workspace.</p></div></header>
+        <form id="schoolSettingsForm" class="panel-body dialog-fields">
+          ${field('school_name', 'School name', 'text', SCHOOL_NAME, null, true, true)}
+          ${imageField('logo_file', 'School logo', logo, true)}
+          <div class="full-field"><button class="button button-primary" type="submit">Save school settings</button></div>
+        </form>
+      </section>`;
+  };
+
+  const accountsView = () => {
+    const accountRows = state.accounts.map(account => `<tr><td>${escapeHtml(account.display_name)}</td><td>${escapeHtml(account.email || 'Email unavailable')}</td><td>${escapeHtml(roleNames[account.role] || account.role)}</td><td>${escapeHtml(records('schools').find(school => school.id === account.school_id)?.name || 'School')}</td><td><input class="field-input" type="password" minlength="12" autocomplete="new-password" data-reset-password="${escapeHtml(account.id)}" aria-label="New temporary password for ${escapeHtml(account.email || account.display_name)}" placeholder="New password"><button class="text-button" data-action="set-password" data-id="${escapeHtml(account.id)}">Set password</button><button class="text-button danger-text" data-action="delete-account" data-id="${escapeHtml(account.id)}">Remove login</button></td></tr>`).join('');
+    return `${pageHeading('ACCESS CONTROL', 'User accounts', 'Create individual teacher and parent sign-ins and set temporary passwords.', '')}
+      <div class="callout"><strong>Secure accounts</strong> · Each person has a separate login. Give temporary passwords to users privately and ask them to change them after signing in.</div>
+      <section class="panel"><header class="panel-header"><div><h2>Create teacher or parent account</h2><p>Credentials are created by the protected Supabase function, never in this browser database.</p></div></header>
+        <form id="createAccountForm" class="panel-body dialog-fields">
+          ${field('role', 'Account type', 'select', 'teacher', [{ value: 'teacher', label: 'Teacher' }, { value: 'parent', label: 'Parent / guardian' }], true)}
+          ${field('display_name', 'Full name', 'text', '', null, true)}
+          ${field('email', 'Email address', 'email', '', null, true)}
+          ${field('password', 'Temporary password (12+ characters)', 'password', '', null, true)}
+          ${field('teacher_id', 'Teacher profile', 'select', '', optionList(records('teachers'), 'full_name', 'Choose teacher'))}
+          <label class="field-label">Parent's linked students<select class="field-select" name="student_ids" multiple size="5">${records('students').map(student => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.full_name)} · ${escapeHtml(className(student.class_id))}</option>`).join('')}</select><small>For parent accounts, select one or more children. Hold Ctrl to select multiple.</small></label>
+          <div class="full-field"><button class="button button-primary" type="submit">Create account</button></div>
+        </form>
+      </section>
+      <section class="panel" style="margin-top:16px"><header class="panel-header"><div><h2>Teacher and parent accounts</h2><p>Set a new individual password when a user needs a reset.</p></div></header><div class="panel-body">
+        ${state.accountsLoaded && !accountRows ? '<div class="empty-state">No teacher or parent accounts are linked yet.</div>' : `<div class="table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>School</th><th>Set new password</th></tr></thead><tbody>${accountRows || '<tr><td colspan="5">Loading accounts…</td></tr>'}</tbody></table></div>`}
+      </div></section>`;
+  };
+
+  const manageAccounts = async payload => {
+    const response = await fetch(`${supabaseUrl}/functions/v1/manage-account`, {
+      method: 'POST',
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Account management failed (${response.status}).`);
+    return result;
+  };
+
+  const loadAccounts = async () => {
+    if (state.mode !== 'live' || state.profile.role !== 'developer') return;
+    state.accountsLoaded = false;
+    try {
+      const result = await manageAccounts({ action: 'list' });
+      state.accounts = result.accounts;
+      state.accountsLoaded = true;
+      if (state.view === 'accounts') pageContent.innerHTML = accountsView();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not load user accounts.', true);
+    }
+  };
+
+  const goToView = view => {
+    if (!labels[view]) return;
+    state.view = view;
+    $('#breadcrumbTitle').textContent = labels[view];
+    document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('selected', button.dataset.view === view));
+    const views = {
+      overview: overviewView,
+      students: () => directoryView('students', 'Student directory', 'Every learner, organized in one place.', 'Add student'),
+      teachers: () => directoryView('teachers', 'Teaching staff', 'Faculty profiles and school contact information.', 'Add teacher'),
+      academics: classesAndSubjectsView,
+      attendance: attendanceView,
+      assessments: assessmentsView,
+      reports: reportsView,
+      accounts: accountsView,
+      school: schoolSettingsView
+    };
+    pageContent.innerHTML = views[view]();
+    $('#navStudentCount').textContent = state.data.students.length;
+    if (view === 'accounts') loadAccounts();
+  };
+
+  const optionList = (rows, labelKey, placeholder) => [
+    { value: '', label: placeholder },
+    ...rows.map(row => ({ value: row.id, label: row[labelKey] }))
+  ];
+
+  const field = (name, label, type = 'text', value = '', options = null, required = false, full = false) => {
+    const klass = full ? 'field-label full-field' : 'field-label';
+    const safeValue = escapeHtml(value);
+    let control;
+    if (type === 'select') {
+      control = `<select class="field-select" name="${name}" ${required ? 'required' : ''}>${(options || []).map(item => `<option value="${escapeHtml(item.value)}" ${String(item.value) === String(value) ? 'selected' : ''}>${escapeHtml(item.label)}</option>`).join('')}</select>`;
+    } else if (type === 'textarea') {
+      control = `<textarea class="field-input" name="${name}" rows="3" ${required ? 'required' : ''}>${safeValue}</textarea>`;
+    } else {
+      control = `<input class="field-input" name="${name}" type="${type}" value="${safeValue}" ${required ? 'required' : ''} ${type === 'number' ? 'min="0"' : ''}>`;
+    }
+    return `<label class="${klass}">${escapeHtml(label)}${control}</label>`;
+  };
+
+  const imageField = (name, label, value, logo = false) => `
+    <label class="field-label full-field">${escapeHtml(label)}
+      <img class="image-preview ${logo ? 'logo-preview' : ''}" data-preview-for="${name}" src="${escapeHtml(value || '')}" alt="Current ${escapeHtml(label.toLowerCase())}" ${value ? '' : 'hidden'}>
+      <input class="field-input image-upload" type="file" name="${name}" accept="image/jpeg,image/png,image/webp" aria-label="${escapeHtml(label)}">
+      <small>Choose an image from your device · JPG, PNG, or WEBP · maximum 5 MB${value ? ' · choose a file to replace the current image' : ''}</small>
+    </label>`;
+
+  const defaultAssessmentDate = (term, type, assignmentId = state.assessmentAssignmentId, excludeId = '') => {
+    const normalized = normalizedTerm(term);
+    const baseYear = Number(currentSchool().academic_year) || new Date().getFullYear();
+    const year = normalized === '2nd Term' ? baseYear + 1 : baseYear;
+    if (type === 'Monthly test') {
+      const assignment = records('class_subjects').find(row => row.id === assignmentId);
+      const existingMonths = new Set(records('assessments')
+        .filter(row => row.id !== excludeId &&
+          row.class_id === assignment?.class_id &&
+          row.subject_id === assignment?.subject_id &&
+          normalizedTerm(row.term) === normalized &&
+          row.assessment_type === 'Monthly test')
+        .map(row => Number(String(row.assessment_date || '').slice(5, 7))));
+      const month = termMonths[normalized].find(item => !existingMonths.has(item.month)) || termMonths[normalized][0];
+      return `${year}-${String(month.month).padStart(2, '0')}-08`;
+    }
+    return normalized === '2nd Term' ? `${year}-05-18` : `${year}-12-18`;
+  };
+
+  const formDefinitions = {
+    students: {
+      title: 'Student', fields: (row = {}) => [
+        imageField('photo_file', 'Student picture', imageSrc(row)),
+        field('full_name', 'Full name', 'text', row.full_name, null, true),
+        field('gender', 'Gender', 'select', row.gender || '', [{ value: '', label: 'Select gender' }, ...['Female', 'Male', 'Other'].map(value => ({ value, label: value }))]),
+        field('class_id', 'Class', 'select', row.class_id || '', optionList(records('classes'), 'name', 'Select class'), true),
+        field('guardian_name', 'Parent / guardian', 'text', row.guardian_name),
+        field('guardian_phone', 'Guardian phone', 'tel', row.guardian_phone),
+        field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value })))
+      ]
+    },
+    teachers: {
+      title: 'Teacher', fields: (row = {}) => [
+        imageField('photo_file', 'Teacher picture', imageSrc(row)),
+        field('full_name', 'Full name', 'text', row.full_name, null, true),
+        field('email', 'Email address', 'email', row.email, null, true),
+        field('phone', 'Phone number', 'tel', row.phone),
+        field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value })))
+      ]
+    },
+    classes: {
+      title: 'Class', fields: (row = {}) => [
+        field('grade', 'Grade', 'text', row.grade, null, true),
+        field('section', 'Section', 'text', row.section, null, true)
+      ]
+    },
+    subjects: {
+      title: 'Subject', fields: (row = {}) => [
+        field('name', 'Subject name', 'text', row.name, null, true),
+        field('code', 'Subject code', 'text', row.code)
+      ]
+    },
+    class_subjects: {
+      title: 'Teaching assignment', fields: row => [
+        field('class_id', 'Class', 'select', row?.class_id || '', optionList(records('classes'), 'name', 'Select class'), true),
+        field('subject_id', 'Subject', 'select', row?.subject_id || '', optionList(records('subjects'), 'name', 'Select subject'), true),
+        field('teacher_id', 'Teacher', 'select', row?.teacher_id || '', optionList(records('teachers'), 'full_name', 'Select teacher'), true)
+      ]
+    },
+    assessments: {
+      title: 'Assessment', fields: (row = {}) => {
+        const assigned = records('class_subjects').find(item => item.id === state.assessmentAssignmentId);
+        const assignments = records('class_subjects').filter(item =>
+          isManager() || (state.profile.role === 'teacher' && item.teacher_id === state.profile.teacher_id));
+        const classes = [...new Map(assignments.map(item => {
+          const klass = records('classes').find(value => value.id === item.class_id);
+          return [klass?.id, klass];
+        }).filter(([id, klass]) => id && klass)).values()];
+        const selectedClass = row.class_id || assigned?.class_id || classes[0]?.id || '';
+        const subjects = assignments.filter(item => item.class_id === selectedClass).map(item =>
+          ({ value: item.subject_id, label: subjectName(item.subject_id) }));
+        const selectedSubject = row.subject_id || assigned?.subject_id || subjects[0]?.value || '';
+        const assessmentTerm = normalizedTerm(row.term || state.assessmentTerm);
+        const selectedAssignment = records('class_subjects').find(item =>
+          item.class_id === selectedClass && item.subject_id === selectedSubject);
+        const configuredMonths = records('assessments').filter(item =>
+          item.class_id === selectedClass &&
+          item.subject_id === selectedSubject &&
+          normalizedTerm(item.term) === assessmentTerm &&
+          item.assessment_type === 'Monthly test').length;
+        const assessmentType = row.assessment_type || (configuredMonths === 3 ? 'Term exam' : 'Monthly test');
+        const assessmentDate = row.assessment_date || defaultAssessmentDate(assessmentTerm, assessmentType, assigned?.id, row.id || '');
+        const assessmentTitle = row.title || (assessmentType === 'Monthly test'
+          ? termMonths[assessmentTerm].find(month => month.month === Number(assessmentDate.slice(5, 7)))?.label || 'Monthly test'
+          : `${assessmentTerm} examination`);
+        return [
+        field('title', 'Assessment title', 'text', assessmentTitle, null, true),
+        field('assessment_type', 'Type', 'select', assessmentType, ['Monthly test', 'Term exam'].map(value => ({ value, label: value })), true),
+        field('class_id', 'Class', 'select', selectedClass, optionList(classes, 'name', 'Select class'), true),
+        field('subject_id', 'Subject', 'select', selectedSubject, [{ value: '', label: 'Select subject' }, ...subjects], true),
+        field('assessment_date', 'Date', 'date', assessmentDate, null, true),
+        field('term', 'Term', 'select', assessmentTerm, ['1st Term', '2nd Term'].map(value => ({ value, label: value })), true),
+        field('max_marks', 'Maximum marks', 'number', assessmentType === 'Monthly test' ? 20 : row.max_marks || 100, null, true)
+      ];
+      }
+    }
+  };
+
+  const openRecordDialog = (table, row = null) => {
+    const definition = formDefinitions[table];
+    if (!definition) return;
+    $('#dialogTitle').textContent = `${row ? 'Edit' : 'Add'} ${definition.title.toLowerCase()}`;
+    $('#dialogFields').innerHTML = definition.fields(row || {}).join('');
+    const dialog = $('#recordDialog');
+    dialog.dataset.table = table;
+    dialog.dataset.id = row?.id || '';
+    if (table === 'assessments') {
+      const form = $('#recordForm');
+      const typeField = form.elements.namedItem('assessment_type');
+      const maximumField = form.elements.namedItem('max_marks');
+      maximumField.readOnly = typeField.value === 'Monthly test';
+      if (typeField.value === 'Monthly test') maximumField.value = '20';
+    }
+    dialog.showModal();
+  };
+
+  const makeCsv = () => {
+    const header = ['Student ID', 'Student name', 'Class', 'Assessment', 'Subject', 'Score', 'Maximum marks', 'Percentage'];
+    const rows = [header, ...permittedMarks().map(mark => {
+      const test = records('assessments').find(row => row.id === mark.assessment_id);
+      const student = records('students').find(row => row.id === mark.student_id);
+      if (!test || !student) return null;
+      return [student.student_id, student.full_name, className(student.class_id), test.title, subjectName(test.subject_id), mark.score, test.max_marks, `${Math.round(mark.score / test.max_marks * 100)}%`];
+    }).filter(Boolean)];
+    const csv = rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `seeds-academic-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleClick = async event => {
+    const termButton = event.target.closest('[data-gradebook-term]');
+    if (termButton) {
+      state.assessmentTerm = termButton.dataset.gradebookTerm;
+      state.assessmentShowBothTerms = false;
+      goToView('assessments');
+      return;
+    }
+    if (event.target.closest('[data-gradebook-both]')) {
+      state.assessmentShowBothTerms = !state.assessmentShowBothTerms;
+      goToView('assessments');
+      return;
+    }
+    if (event.target.closest('[data-gradebook-view-all]')) {
+      state.assessmentShowWholeClass = !state.assessmentShowWholeClass;
+      goToView('assessments');
+      return;
+    }
+    if (event.target.closest('[data-gradebook-enrollment-toggle]')) {
+      state.assessmentEnrollOpen = !state.assessmentEnrollOpen;
+      goToView('assessments');
+      return;
+    }
+    if (event.target.closest('[data-save-enrollment]')) {
+      try { await saveSubjectEnrollments(); }
+      catch (error) { showToast(error instanceof Error ? error.message : 'Could not save subject enrollment.', true); }
+      return;
+    }
+    const viewButton = event.target.closest('[data-view]');
+    if (viewButton) {
+      goToView(viewButton.dataset.view);
+      return;
+    }
+    const attendanceViewButton = event.target.closest('[data-attendance-view]');
+    if (attendanceViewButton) {
+      state.attendanceViewMode = attendanceViewButton.dataset.attendanceView;
+      goToView('attendance');
+      return;
+    }
+    if (event.target.closest('[data-print-class-strength]')) {
+      document.body.classList.add('printing-class-strength');
+      window.print();
+      return;
+    }
+    const orientationButton = event.target.closest('[data-print-orientation]');
+    if (orientationButton) {
+      state.attendancePrintOrientation = orientationButton.dataset.printOrientation;
+      goToView('attendance');
+      return;
+    }
+    if (event.target.closest('[data-print-attendance]')) {
+      window.print();
+      return;
+    }
+    const statusButton = event.target.closest('[data-student-status]');
+    if (statusButton) {
+      state.attendanceStatuses[statusButton.dataset.student] = statusButton.dataset.studentStatus;
+      goToView('attendance');
+      return;
+    }
+    const batchButton = event.target.closest('[data-batch-status]');
+    if (batchButton) {
+      for (const student of attendanceStudents()) state.attendanceStatuses[student.id] = batchButton.dataset.batchStatus;
+      goToView('attendance');
+      showToast(`Marked ${attendanceStudents().length} students ${batchButton.dataset.batchStatus}.`);
+      return;
+    }
+    const dateStep = event.target.closest('[data-date-step]');
+    if (dateStep) {
+      const date = new Date(`${state.attendanceDate}T12:00:00`);
+      date.setDate(date.getDate() + Number(dateStep.dataset.dateStep));
+      state.attendanceDate = localDateISO(date);
+      goToView('attendance');
+      return;
+    }
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    const { action, table, id } = button.dataset;
+    try {
+      if (action === 'add') openRecordDialog(table);
+      if (action === 'edit') openRecordDialog(table, records(table).find(row => row.id === id));
+      if (action === 'delete') {
+        const record = records(table).find(row => row.id === id);
+        if (!record || !window.confirm(`Remove ${record.full_name || record.name || record.title || 'this record'}?`)) return;
+        await deleteRow(table, id);
+        goToView(state.view);
+        showToast('Record removed.');
+      }
+      if (action === 'open-marks') {
+        state.activeAssessment = id;
+        goToView('assessments');
+      }
+      if (action === 'export') makeCsv();
+      if (action === 'set-password') {
+        const input = pageContent.querySelector(`[data-reset-password="${CSS.escape(id)}"]`);
+        const password = input?.value || '';
+        if (password.length < 12) throw new Error('Choose a temporary password with at least 12 characters.');
+        await manageAccounts({ action: 'set-password', user_id: id, password });
+        input.value = '';
+        showToast('Password updated. Share it with the user privately.');
+      }
+      if (action === 'delete-account') {
+        const account = state.accounts.find(item => item.id === id);
+        if (!account || !window.confirm(`Remove the sign-in for ${account.display_name}? Their student or teacher directory record will remain.`)) return;
+        await manageAccounts({ action: 'delete-account', user_id: id });
+        showToast('Sign-in removed. The directory record remains.');
+        await loadAccounts();
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not complete this action.', true);
+    }
+  };
+
+  const resetMonthlyAssessmentDate = form => {
+    const typeField = form.elements.namedItem('assessment_type');
+    if (typeField.value !== 'Monthly test') return;
+    const termField = form.elements.namedItem('term');
+    const dateField = form.elements.namedItem('assessment_date');
+    const titleField = form.elements.namedItem('title');
+    const assignment = records('class_subjects').find(row =>
+      row.class_id === form.elements.namedItem('class_id').value &&
+      row.subject_id === form.elements.namedItem('subject_id').value);
+    dateField.value = defaultAssessmentDate(termField.value, typeField.value, assignment?.id, $('#recordDialog').dataset.id);
+    const month = termMonths[normalizedTerm(termField.value)]
+      .find(item => item.month === Number(dateField.value.slice(5, 7)));
+    const knownMonthTitles = Object.values(termMonths).flat().map(item => item.label);
+    if (month && (!titleField.value.trim() || knownMonthTitles.includes(titleField.value.trim()))) {
+      titleField.value = month.label;
+    }
+  };
+
+  const handlePageChange = event => {
+    if (event.target.id === 'gradebookClass') {
+      const assignment = gradebookAssignments().find(row => row.class_id === event.target.value);
+      state.assessmentAssignmentId = assignment?.id || '';
+      state.assessmentShowWholeClass = false;
+      state.assessmentEnrollOpen = false;
+      goToView('assessments');
+      return;
+    }
+    if (event.target.id === 'gradebookSubject') {
+      state.assessmentAssignmentId = event.target.value;
+      state.assessmentShowWholeClass = false;
+      state.assessmentEnrollOpen = false;
+      goToView('assessments');
+      return;
+    }
+    if (event.target.form?.id === 'recordForm' && event.target.name === 'class_id' &&
+        $('#recordDialog').dataset.table === 'assessments') {
+      const assignment = records('class_subjects').find(row =>
+        row.class_id === event.target.value &&
+        (isManager() || row.teacher_id === state.profile.teacher_id));
+      const subjectField = event.target.form.elements.namedItem('subject_id');
+      const assignments = records('class_subjects').filter(row =>
+        row.class_id === event.target.value &&
+        (isManager() || row.teacher_id === state.profile.teacher_id));
+      subjectField.innerHTML = assignments.map(row =>
+        `<option value="${escapeHtml(row.subject_id)}">${escapeHtml(subjectName(row.subject_id))}</option>`).join('');
+      if (assignment) subjectField.value = assignment.subject_id;
+      resetMonthlyAssessmentDate(event.target.form);
+      return;
+    }
+    if (event.target.form?.id === 'recordForm' && event.target.name === 'subject_id' &&
+        $('#recordDialog').dataset.table === 'assessments') {
+      resetMonthlyAssessmentDate(event.target.form);
+      return;
+    }
+    if (event.target.form?.id === 'recordForm' &&
+        ['assessment_type', 'term', 'assessment_date'].includes(event.target.name) &&
+        $('#recordDialog').dataset.table === 'assessments') {
+      const form = event.target.form;
+      const typeField = form.elements.namedItem('assessment_type');
+      const termField = form.elements.namedItem('term');
+      const dateField = form.elements.namedItem('assessment_date');
+      const titleField = form.elements.namedItem('title');
+      const maximumField = form.elements.namedItem('max_marks');
+      const monthNumber = Number(dateField.value.slice(5, 7));
+      const monthsForTerm = termMonths[normalizedTerm(termField.value)];
+      if (typeField.value === 'Monthly test') {
+        maximumField.value = '20';
+        maximumField.readOnly = true;
+        if (!monthsForTerm.some(month => month.month === monthNumber)) {
+          const assignment = records('class_subjects').find(row =>
+            row.class_id === form.elements.namedItem('class_id').value &&
+            row.subject_id === form.elements.namedItem('subject_id').value);
+          dateField.value = defaultAssessmentDate(termField.value, typeField.value, assignment?.id, $('#recordDialog').dataset.id);
+        }
+        const selectedMonth = monthsForTerm.find(month => month.month === Number(dateField.value.slice(5, 7)));
+        const knownMonthTitles = Object.values(termMonths).flat().map(month => month.label);
+        if (selectedMonth && (!titleField.value.trim() || knownMonthTitles.includes(titleField.value.trim()))) {
+          titleField.value = selectedMonth.label;
+        }
+      } else {
+        maximumField.readOnly = false;
+        if (event.target.name === 'assessment_type') {
+          if (!maximumField.value || maximumField.value === '20') maximumField.value = '100';
+          const assignment = records('class_subjects').find(row =>
+            row.class_id === form.elements.namedItem('class_id').value &&
+            row.subject_id === form.elements.namedItem('subject_id').value);
+          dateField.value = defaultAssessmentDate(termField.value, typeField.value, assignment?.id, $('#recordDialog').dataset.id);
+          const knownMonthTitles = Object.values(termMonths).flat().map(month => month.label);
+          if (!titleField.value.trim() || knownMonthTitles.includes(titleField.value.trim())) {
+            titleField.value = `${normalizedTerm(termField.value)} examination`;
+          }
+        }
+        if (event.target.name === 'term' && !maximumField.value) maximumField.value = '100';
+      }
+      return;
+    }
+    if (event.target.id === 'attendanceClass') {
+      state.attendanceClass = event.target.value;
+      state.attendanceAssignmentId = '';
+      state.attendanceStatuses = {};
+      goToView('attendance');
+      return;
+    }
+    if (event.target.id === 'attendanceAssignment') {
+      const selected = records('class_subjects').find(row => row.id === event.target.value);
+      state.attendanceAssignmentId = selected?.id || '';
+      if (selected) state.attendanceClass = selected.class_id;
+      state.attendanceStatuses = {};
+      goToView('attendance');
+      return;
+    }
+    if (event.target.id === 'attendanceDate') {
+      state.attendanceDate = event.target.value;
+      if (!state.attendanceRangeMode) {
+        state.attendanceRangeStart = event.target.value;
+        state.attendanceRangeEnd = event.target.value;
+      }
+      state.attendanceStatuses = {};
+      goToView('attendance');
+      return;
+    }
+    if (event.target.id === 'attendanceRangeMode') {
+      state.attendanceRangeMode = event.target.checked;
+      state.attendanceRangeStart = state.attendanceDate;
+      state.attendanceRangeEnd = state.attendanceDate;
+      goToView('attendance');
+      return;
+    }
+    if (event.target.id === 'attendanceRangeStart') {
+      state.attendanceRangeStart = event.target.value;
+      goToView('attendance');
+      return;
+    }
+    if (event.target.id === 'attendanceRangeEnd') {
+      state.attendanceRangeEnd = event.target.value;
+      goToView('attendance');
+      return;
+    }
+    if (event.target.id === 'attendanceMonth') {
+      state.attendanceMonth = event.target.value;
+      goToView('attendance');
+      return;
+    }
+    if (event.target.matches('input[type="file"]')) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        validateImage(file);
+        const preview = event.target.closest('label')?.querySelector('.image-preview');
+        if (preview) fileDataUrl(file).then(dataUrl => {
+          preview.src = dataUrl;
+          preview.hidden = false;
+        }).catch(error => showToast(error.message, true));
+      } catch (error) {
+        event.target.value = '';
+        showToast(error instanceof Error ? error.message : 'Invalid image.', true);
+      }
+      return;
+    }
+    if (event.target.id === 'tableSearch') {
+      state.search = event.target.value;
+      const selection = [event.target.selectionStart, event.target.selectionEnd];
+      goToView(state.view);
+      const search = $('#tableSearch');
+      if (search) {
+        search.focus();
+        search.setSelectionRange(...selection);
+      }
+    }
+  };
+
+  const createAccount = async event => {
+    event.preventDefault();
+    const form = event.target;
+    const values = new FormData(form);
+    const role = String(values.get('role') || '');
+    const password = String(values.get('password') || '');
+    if (password.length < 12) {
+      showToast('Choose a temporary password with at least 12 characters.', true);
+      return;
+    }
+    const studentSelect = form.elements.namedItem('student_ids');
+    const studentIds = [...studentSelect.selectedOptions].map(option => option.value);
+    try {
+      await manageAccounts({
+        action: 'create',
+        role,
+        school_id: state.currentSchoolId,
+        display_name: String(values.get('display_name') || '').trim(),
+        email: String(values.get('email') || '').trim(),
+        password,
+        teacher_id: String(values.get('teacher_id') || '') || null,
+        student_ids: studentIds
+      });
+      form.reset();
+      showToast('Account created. Share the temporary password privately.');
+      await loadAccounts();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not create the account.', true);
+    }
+  };
+
+  const saveDialog = async event => {
+    if (event.submitter?.value !== 'save') return;
+    event.preventDefault();
+    const dialog = $('#recordDialog');
+    const table = dialog.dataset.table;
+    const id = dialog.dataset.id;
+    const values = Object.fromEntries(new FormData($('#recordForm')).entries());
+    const file = values.photo_file;
+    const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => formDefinitions[table]?.fields && key !== 'photo_file' && !(value instanceof File)));
+    if (table === 'assessments') {
+      payload.term = normalizedTerm(payload.term);
+      payload.max_marks = Number(payload.max_marks);
+      if (payload.assessment_type === 'Monthly test') {
+        const month = Number(String(payload.assessment_date).slice(5, 7));
+        if (!termMonths[payload.term].some(item => item.month === month)) {
+          showToast(`Monthly tests for ${payload.term} must be dated in ${termMonths[payload.term].map(item => item.label).join(', ')}.`, true);
+          return;
+        }
+        if (payload.max_marks !== 20) {
+          showToast('Each monthly test must be out of 20 marks.', true);
+          return;
+        }
+        const duplicate = records('assessments').some(row =>
+          row.id !== id &&
+          row.class_id === payload.class_id &&
+          row.subject_id === payload.subject_id &&
+          normalizedTerm(row.term) === payload.term &&
+          row.assessment_type === 'Monthly test' &&
+          String(row.assessment_date || '').slice(0, 4) === String(payload.assessment_date).slice(0, 4) &&
+          Number(String(row.assessment_date || '').slice(5, 7)) === month);
+        if (duplicate) {
+          showToast(`A ${termMonths[payload.term].find(item => item.month === month).label} test already exists for this subject and class.`, true);
+          return;
+        }
+      }
+    }
+    try {
+      let uploadedPath = '';
+      let saveId = id || null;
+      if (file instanceof File && file.size) {
+        validateImage(file);
+        saveId ||= crypto.randomUUID();
+        const folder = table === 'students' ? 'students' : 'teachers';
+        uploadedPath = `${state.currentSchoolId}/${folder}/${saveId}.${imageExtension(file)}`;
+        payload.photo_path = await uploadImage(uploadedPath, file);
+      }
+      try {
+        await saveRow(table, payload, saveId);
+      } catch (error) {
+        if (uploadedPath) await removeImage(uploadedPath);
+        throw error;
+      }
+      dialog.close();
+      if (table === 'assessments') {
+        const assignment = records('class_subjects').find(item =>
+          item.class_id === payload.class_id && item.subject_id === payload.subject_id);
+        state.assessmentAssignmentId = assignment?.id || state.assessmentAssignmentId;
+        state.assessmentTerm = normalizedTerm(payload.term);
+      }
+      syncSchoolIdentity();
+      goToView(state.view);
+      showToast(`${formDefinitions[table].title} ${id ? 'updated' : 'added'}.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save the record.', true);
+    }
+  };
+
+  const imageExtension = file => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' })[file.type] || '';
+  const validateImage = file => {
+    if (!imageExtension(file)) throw new Error('Choose a JPG, PNG, or WEBP image.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Images must be 5 MB or smaller.');
+  };
+
+  const saveSchoolSettings = async event => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const name = String(formData.get('school_name') || '').trim();
+    const file = formData.get('logo_file');
+    if (!name) {
+      showToast('Enter the school name.', true);
+      return;
+    }
+    try {
+      const payload = { name };
+      if (file instanceof File && file.size) {
+        validateImage(file);
+        const path = `${state.currentSchoolId}/school/logo.${imageExtension(file)}`;
+        payload.logo_path = await uploadImage(path, file);
+      }
+      await api(`schools?id=eq.${encodeURIComponent(state.currentSchoolId)}`, { method: 'PATCH', body: payload, prefer: 'return=minimal' });
+      await refreshData();
+      syncSchoolIdentity();
+      goToView('school');
+      showToast('School settings saved.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save school settings.', true);
+    }
+  };
+
+  const saveAttendance = async () => {
+    if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) {
+      throw new Error('Your account is not allowed to record attendance.');
+    }
+    const assignment = attendanceAssignment();
+    if (state.profile.role === 'teacher' &&
+        (!assignment || assignment.teacher_id !== state.profile.teacher_id)) {
+      throw new Error('Select a subject assigned to your teacher account before saving attendance.');
+    }
+    const students = attendanceStudents();
+    if (!students.length) throw new Error('There are no students in the selected class.');
+    const start = state.attendanceRangeMode ? state.attendanceRangeStart : state.attendanceDate;
+    const end = state.attendanceRangeMode ? state.attendanceRangeEnd : state.attendanceDate;
+    const startDate = new Date(`${start}T12:00:00`);
+    const endDate = new Date(`${end}T12:00:00`);
+    if (!start || !end || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) ||
+        localDateISO(startDate) !== start || localDateISO(endDate) !== end || endDate < startDate) {
+      throw new Error('Choose a valid start and end date. The end date must not be before the start date.');
+    }
+    const dayCount = Math.round((endDate - startDate) / 86400000) + 1;
+    if (dayCount > 366) throw new Error('Attendance can be applied to at most 366 days at a time.');
+    const maxRows = 10000;
+    if (students.length * dayCount > maxRows) {
+      throw new Error(`This range would create more than ${maxRows.toLocaleString()} attendance records. Choose a shorter date range or a smaller class.`);
+    }
+    const validStatuses = new Set(['present', 'absent', 'leave', 'holiday']);
+    const rows = [];
+    for (let offset = 0; offset < dayCount; offset++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + offset);
+      const attendanceDate = localDateISO(date);
+      for (const student of students) {
+        const status = state.attendanceStatuses[student.id] || 'present';
+        if (!validStatuses.has(status)) throw new Error('Select a valid attendance status for every student.');
+        rows.push({
+          student_id: student.id,
+          class_id: student.class_id,
+          ...(assignment ? { subject_id: assignment.subject_id } : {}),
+          attendance_date: attendanceDate,
+          status,
+          school_id: state.currentSchoolId
+        });
+      }
+    }
+    const targetTable = assignment ? 'subject_attendance' : 'attendance';
+    for (let offset = 0; offset < rows.length; offset += 500) {
+      await api(`${targetTable}?on_conflict=student_id,${assignment ? 'subject_id,' : ''}attendance_date`, {
+        method: 'POST',
+        body: rows.slice(offset, offset + 500),
+        prefer: 'resolution=merge-duplicates,return=minimal'
+      });
+    }
+    await refreshData();
+    goToView('attendance');
+    showToast(`${assignment ? `${subjectName(assignment.subject_id)} subject` : 'Class'} attendance saved for ${students.length} students across ${dayCount} day${dayCount === 1 ? '' : 's'}.`);
+  };
+
+  const saveMarks = async () => {
+    const assignment = records('class_subjects').find(row => row.id === state.assessmentAssignmentId);
+    if (!assignment) throw new Error('Select a class and subject before saving marks.');
+    if (!isManager() && (state.profile.role !== 'teacher' || assignment.teacher_id !== state.profile.teacher_id)) {
+      throw new Error('Your account is not allowed to enter marks for this subject.');
+    }
+    const enrolledIds = new Set(records('subject_enrollments')
+      .filter(row => row.assignment_id === assignment.id)
+      .map(row => row.student_id));
+    const inputs = [...pageContent.querySelectorAll('.gradebook-score')].filter(input => !input.disabled);
+    const existingMarks = records('marks');
+    const rows = [];
+    const removals = [];
+    for (const input of inputs) {
+      if (input.validity.badInput || input.validity.stepMismatch) {
+        throw new Error('Enter marks as numbers with no more than two decimal places.');
+      }
+      const assessment = records('assessments').find(row =>
+        row.id === input.dataset.assessmentId &&
+        row.class_id === assignment.class_id &&
+        row.subject_id === assignment.subject_id);
+      if (!assessment) throw new Error('A mark refers to an assessment outside the selected subject.');
+      const existing = existingMarks.find(mark =>
+        mark.assessment_id === assessment.id && mark.student_id === input.dataset.student);
+      const score = enteredScore(input.value);
+      if (input.value.trim() === '' || isAbsentEntry(input.value)) {
+        if (existing) {
+          if (!enrolledIds.has(input.dataset.student)) throw new Error('Only enrolled students can have marks cleared.');
+          removals.push({ assessmentId: assessment.id, studentId: input.dataset.student });
+        }
+        continue;
+      }
+      if (assessment.assessment_type === 'Monthly test' &&
+          !/^(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(input.value.trim())) {
+        throw new Error('Monthly scores must be numbers with no more than two decimal places, or A/Absent.');
+      }
+      if (!Number.isFinite(score)) throw new Error('Enter a numeric score, or use A/Absent for a monthly absence.');
+      if (!enrolledIds.has(input.dataset.student)) throw new Error('Only students assigned to this subject can receive marks.');
+      if (assessment.assessment_type === 'Monthly test') {
+        const month = Number(String(assessment.assessment_date || '').slice(5, 7));
+        if (Number(assessment.max_marks) !== 20 || !termMonths[normalizedTerm(assessment.term)]
+          .some(item => item.month === month)) {
+          throw new Error('Monthly tests must be scheduled in their term months and be out of 20 marks.');
+        }
+      }
+      if (!Number.isFinite(score) || score < 0 || score > Number(assessment.max_marks)) {
+        throw new Error(`Scores must be between 0 and ${assessment.max_marks} for ${assessment.title}.`);
+      }
+      rows.push({
+        assessment_id: assessment.id,
+        student_id: input.dataset.student,
+        score,
+        school_id: state.currentSchoolId
+      });
+    }
+    if (!rows.length && !removals.length) throw new Error('Enter or clear at least one mark before saving.');
+    if (rows.length) {
+      await api('marks?on_conflict=assessment_id,student_id', {
+        method: 'POST', body: rows, prefer: 'resolution=merge-duplicates,return=minimal'
+      });
+    }
+    for (const row of removals) {
+      await api(`marks?assessment_id=eq.${encodeURIComponent(row.assessmentId)}&student_id=eq.${encodeURIComponent(row.studentId)}`, {
+        method: 'DELETE',
+        prefer: 'return=minimal'
+      });
+    }
+    await refreshData();
+    goToView('assessments');
+    showToast(`Saved ${rows.length} mark${rows.length === 1 ? '' : 's'}${removals.length ? ` and cleared ${removals.length} blank score${removals.length === 1 ? '' : 's'}` : ''}.`);
+  };
+
+  const saveSubjectEnrollments = async () => {
+    const assignment = records('class_subjects').find(row => row.id === state.assessmentAssignmentId);
+    if (!assignment || (!isManager() && (state.profile.role !== 'teacher' || assignment.teacher_id !== state.profile.teacher_id))) {
+      throw new Error('You are not allowed to assign students to this subject.');
+    }
+    const classStudentIds = new Set(records('students')
+      .filter(student => student.class_id === assignment.class_id)
+      .map(student => student.id));
+    const selectedIds = new Set([...pageContent.querySelectorAll('[data-enroll-student]:checked')]
+      .map(input => input.value));
+    if ([...selectedIds].some(id => !classStudentIds.has(id))) {
+      throw new Error('Only students in the selected class can be assigned to this subject.');
+    }
+    const currentRows = records('subject_enrollments').filter(row => row.assignment_id === assignment.id);
+    const currentIds = new Set(currentRows.map(row => row.student_id));
+    const additions = [...selectedIds].filter(id => !currentIds.has(id));
+    const removals = currentRows.filter(row => !selectedIds.has(row.student_id));
+    for (const row of removals) {
+      await api(`subject_enrollments?id=eq.${encodeURIComponent(row.id)}`, {
+        method: 'DELETE',
+        prefer: 'return=minimal'
+      });
+    }
+    if (additions.length) {
+      await api('subject_enrollments', {
+        method: 'POST',
+        body: additions.map(student_id => ({
+          school_id: state.currentSchoolId,
+          assignment_id: assignment.id,
+          student_id
+        })),
+        prefer: 'return=minimal'
+      });
+    }
+    await refreshData();
+    state.assessmentEnrollOpen = false;
+    goToView('assessments');
+    showToast(`Subject enrollment saved: ${selectedIds.size} students assigned.`);
+  };
+
+  const initialize = () => {
+    const configured = isConfigured;
+    window.addEventListener('afterprint', () => document.body.classList.remove('printing-class-strength'));
+    $('#modeBanner').textContent = configured
+      ? 'Sign in with the account provided by your school administrator. The app never stores your password.'
+      : 'Database setup required. Sample records have been removed and sign-in is unavailable until you connect Supabase. Create a Supabase project, run supabase-schema.sql, then set its Project URL and public anon key in config.js. Never put a service-role key here.';
+    $('#loginForm').classList.toggle('hidden', !configured);
+    $('#loginRoleChoices').classList.toggle('hidden', !configured);
+    if (configured) $('#modeBanner').classList.add('secure');
+
+    $('#loginForm').addEventListener('submit', signIn);
+    $('#loginRoleChoices').addEventListener('click', event => {
+      const choice = event.target.closest('[data-login-role]');
+      if (!choice) return;
+      state.selectedLoginRole = choice.dataset.loginRole;
+      setLoginMessage('');
+      document.querySelectorAll('[data-login-role]').forEach(button => {
+        const selected = button === choice;
+        button.classList.toggle('selected', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+    });
+    $('#schoolPicker').addEventListener('change', async event => {
+      state.currentSchoolId = event.target.value;
+      try {
+        await refreshData();
+        syncSchoolIdentity();
+        goToView(state.view);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not load this school.', true);
+      }
+    });
+    $('#signOutButton').addEventListener('click', logout);
+    $('#mainNav').addEventListener('click', event => {
+      const button = event.target.closest('[data-view]');
+      if (button) goToView(button.dataset.view);
+    });
+    pageContent.addEventListener('click', handleClick);
+    pageContent.addEventListener('input', event => {
+      if (event.target.id === 'classStrengthSearch') {
+        state.classStrengthSearch = event.target.value;
+        const query = state.classStrengthSearch.trim().toLocaleLowerCase();
+        const rows = [...pageContent.querySelectorAll('[data-class-strength-row]')];
+        let visibleCount = 0;
+        rows.forEach(row => {
+          const matches = row.dataset.search.includes(query);
+          row.hidden = !matches;
+          if (matches) visibleCount += 1;
+        });
+        $('#classStrengthCount').textContent = `Showing ${visibleCount} of ${rows.length} Classes`;
+        const noResultsRow = $('#classStrengthNoResults');
+        if (noResultsRow) noResultsRow.hidden = visibleCount > 0;
+      }
+      if (event.target.matches('.gradebook-score')) gradebookRowTotals(event.target.closest('[data-gradebook-row]'));
+    });
+    pageContent.addEventListener('change', handlePageChange);
+    pageContent.addEventListener('submit', event => {
+      if (event.target.id === 'createAccountForm') createAccount(event);
+      if (event.target.id === 'schoolSettingsForm') saveSchoolSettings(event);
+    });
+    $('#recordForm').addEventListener('change', handlePageChange);
+    $('#recordForm').addEventListener('submit', saveDialog);
+    $('#recordDialog').addEventListener('click', event => {
+      if (event.target === $('#recordDialog')) $('#recordDialog').close();
+    });
+    pageContent.addEventListener('click', async event => {
+      if (event.target.closest('#saveAttendance')) {
+        try { await saveAttendance(); }
+        catch (error) { showToast(error instanceof Error ? error.message : 'Could not save attendance.', true); }
+      }
+      if (event.target.closest('#saveMarks')) {
+        try { await saveMarks(); }
+        catch (error) { showToast(error instanceof Error ? error.message : 'Could not save marks.', true); }
+      }
+    });
+    $('#helpButton').addEventListener('click', () => showToast('Contact your school administrator for help.'));
+    $('#notificationButton').addEventListener('click', () => showToast('You are all caught up.'));
+    $('#profileButton').addEventListener('click', () => showToast(`${$('#profileName').textContent} · ${$('#profileRole').textContent}`));
+  };
+
+  initialize();
+})();

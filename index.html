@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10251e">
+  <title>SEEDS School of Excellence · Academics Hub</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app" class="app">
+    <section id="loginView" class="login-shell">
+      <div class="login-card">
+        <div class="brand-lockup">
+          <img id="loginBrandIcon" class="brand-icon" src="assets/seeds-logo.png" alt="SEEDS School of Excellence logo">
+          <div><strong>ACADEMICS HUB</strong></div>
+        </div>
+        <p class="eyebrow">SCHOOL MANAGEMENT WORKSPACE</p>
+        <h1>Better learning starts with clarity.</h1>
+        <p class="login-copy">Attendance, assessments, and academic progress in one secure place.</p>
+        <div id="modeBanner" class="mode-banner"></div>
+        <div id="loginRoleChoices" class="login-role-choices" aria-label="Choose account type">
+          <p class="field-label">Choose your account type</p>
+          <div class="role-choice-grid">
+            <button type="button" class="role-choice" data-login-role="developer" aria-pressed="false"><strong>Developer</strong><span>Platform access</span></button>
+            <button type="button" class="role-choice selected" data-login-role="admin" aria-pressed="true"><strong>Administrator</strong><span>School management</span></button>
+            <button type="button" class="role-choice" data-login-role="teacher" aria-pressed="false"><strong>Teacher</strong><span>Teaching workspace</span></button>
+            <button type="button" class="role-choice" data-login-role="parent" aria-pressed="false"><strong>Parent / guardian</strong><span>Family access</span></button>
+            <button type="button" class="role-choice" data-login-role="student" aria-pressed="false"><strong>Student</strong><span>Student access</span></button>
+          </div>
+        </div>
+        <form id="loginForm" class="login-form">
+          <label>Email address<input id="emailInput" type="email" autocomplete="username" required placeholder="name@school.edu"></label>
+          <label>Password<input id="passwordInput" type="password" autocomplete="current-password" required placeholder="Your password"></label>
+          <button class="button button-primary button-full" type="submit">Sign in <span aria-hidden="true">→</span></button>
+          <p id="loginMessage" class="form-message" role="status"></p>
+        </form>
+        <div class="login-footer"><span class="secure-dot"></span> Protected school workspace</div>
+      </div>
+      <div class="login-aside">
+        <img class="login-building-image" src="assets/seeds-building.png" alt="SEEDS School of Excellence building">
+        <div class="aside-orbit orbit-one"></div><div class="aside-orbit orbit-two"></div>
+        <div class="aside-content">
+          <span class="eyebrow light">A clearer view of every learner</span>
+          <h2>Every effort.<br>Every milestone.<br><em>Moving forward.</em></h2>
+          <div class="mini-progress"><div><span>Learning progress</span><strong>On track</strong></div><i><b></b></i></div>
+          <div class="aside-foot"><span>01 / 04</span><span>SEEDS · ACADEMIC YEAR 2026</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workspaceView" class="workspace hidden">
+      <aside class="sidebar">
+        <div class="brand-lockup compact">
+          <img id="workspaceBrandIcon" class="brand-icon" src="assets/seeds-logo.png" alt="SEEDS School of Excellence logo">
+          <div><strong>ACADEMICS HUB</strong></div>
+        </div>
+        <div class="school-switch"><div><strong id="schoolName">SEEDS School of Excellence</strong><small id="schoolYear">Academic year 2026</small></div><select id="schoolPicker" class="school-picker hidden" aria-label="Choose school"></select></div>
+        <div class="nav-label">WORKSPACE</div>
+        <nav id="mainNav" class="main-nav" aria-label="Main navigation">
+          <button class="nav-item selected" data-view="overview"><span>◫</span> Overview</button>
+          <button class="nav-item" data-view="students"><span>♧</span> Students <span id="navStudentCount" class="nav-count"></span></button>
+          <button class="nav-item" data-view="teachers"><span>♙</span> Teachers</button>
+          <button class="nav-item" data-view="academics"><span>▦</span> Classes & subjects</button>
+          <button class="nav-item" data-view="attendance"><span>✓</span> Attendance</button>
+          <button class="nav-item" data-view="assessments"><span>▤</span> Assessments & marks</button>
+          <button class="nav-item" data-view="reports"><span>⌁</span> Reports</button>
+          <button class="nav-item hidden" data-view="accounts"><span>♙</span> User accounts</button>
+          <button class="nav-item hidden" data-view="school"><span>⚙</span> School settings</button>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="help-card"><span class="help-spark">✳</span><strong>Here to help</strong><p>Need a hand with your workspace?</p><button id="helpButton" class="text-button">Visit help center <span>↗</span></button></div>
+          <button id="profileButton" class="profile-button"><span id="profileInitials" class="profile-avatar">SA</span><span class="profile-text"><strong id="profileName">School Admin</strong><small id="profileRole">Administrator</small></span><span class="chevron">···</span></button>
+        </div>
+      </aside>
+      <section class="content-area">
+        <header class="topbar">
+          <div class="breadcrumbs"><span>Workspace</span><b>/</b><strong id="breadcrumbTitle">Overview</strong></div>
+          <div class="topbar-right"><span id="modeBadge" class="mode-badge"></span><button class="icon-button" id="notificationButton" aria-label="Notifications">♧<i></i></button><button id="signOutButton" class="button button-outline">Sign out</button></div>
+        </header>
+        <div id="pageContent" class="page-content"></div>
+      </section>
+    </section>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <dialog id="recordDialog" class="record-dialog">
+      <form id="recordForm" method="dialog">
+        <div class="dialog-head"><div><p class="eyebrow">SEEDS SCHOOL OF EXCELLENCE</p><h2 id="dialogTitle">Add record</h2></div><button class="icon-button close-dialog" value="cancel" aria-label="Close">×</button></div>
+        <div id="dialogFields" class="dialog-fields"></div>
+        <div class="dialog-actions"><button class="button button-outline" value="cancel">Cancel</button><button id="saveRecordButton" class="button button-primary" value="save">Save record</button></div>
+      </form>
+    </dialog>
+  </main>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
