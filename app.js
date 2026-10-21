@@ -163,8 +163,8 @@
         const result = await response.json();
         return [path, result.signedURL.startsWith('http') ? result.signedURL : `${supabaseUrl}${result.signedURL}`];
       } catch (error) {
-        console.warn('Skipped unreadable image:', path, error);
-        return null;
+        // Fallback: try direct public Supabase storage URL if signed URL fails
+        return [path, `${supabaseUrl}/storage/v1/object/public/school-media/${objectPath}`];
       }
     }));
     state.imageUrls = Object.fromEntries(results.filter(Boolean));
