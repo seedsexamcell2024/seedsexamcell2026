@@ -41,6 +41,11 @@
     attendanceViewMode: 'daily',
     attendanceMonth: todayISO().slice(0, 7),
     attendancePrintOrientation: 'landscape',
+    reportCardScope: 'monthly',
+    reportCardTerm: '1st Term',
+    reportCardMonth: '',
+    reportCardStudentId: '',
+    reportCardClass: '',
     data: Object.fromEntries([
       'schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects',
       'subject_enrollments', 'attendance', 'subject_attendance', 'assessments',
@@ -61,6 +66,7 @@
     attendance: 'Attendance',
     assessments: 'Assessments & marks',
     reports: 'Reports',
+    reportcards: 'Report cards',
     accounts: 'User accounts',
     school: 'School settings'
   };
@@ -147,16 +153,21 @@
     const uniquePaths = [...new Set(paths)];
     const results = await Promise.all(uniquePaths.map(async path => {
       const objectPath = path.split('/').map(encodeURIComponent).join('/');
-      const response = await fetch(`${supabaseUrl}/storage/v1/object/sign/school-media/${objectPath}`, {
-        method: 'POST',
-        headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expiresIn: 3600 })
-      });
-      if (!response.ok) throw new Error(`Could not load an uploaded image (${response.status}).`);
-      const result = await response.json();
-      return [path, result.signedURL.startsWith('http') ? result.signedURL : `${supabaseUrl}${result.signedURL}`];
+      try {
+        const response = await fetch(`${supabaseUrl}/storage/v1/object/sign/school-media/${objectPath}`, {
+          method: 'POST',
+          headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expiresIn: 3600 })
+        });
+        if (!response.ok) throw new Error(`Could not load an uploaded image (${response.status}).`);
+        const result = await response.json();
+        return [path, result.signedURL.startsWith('http') ? result.signedURL : `${supabaseUrl}${result.signedURL}`];
+      } catch (error) {
+        console.warn('Skipped unreadable image:', path, error);
+        return null;
+      }
     }));
-    state.imageUrls = Object.fromEntries(results);
+    state.imageUrls = Object.fromEntries(results.filter(Boolean));
   };
 
   const uploadImage = async (path, file) => {
@@ -190,6 +201,47 @@
     reader.onerror = () => reject(new Error('Could not read the selected image.'));
     reader.readAsDataURL(file);
   });
+
+  const photoExtension = path => {
+    const extension = String(path || '').split('/').pop().split('.').pop().toLowerCase();
+    return ['jpg', 'jpeg', 'png', 'webp'].includes(extension) ? extension : 'jpg';
+  };
+
+  const mimeForExtension = extension => ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[extension] || 'image/jpeg');
+
+  const migrateLegacyStudentPhotos = async () => {
+    if (!isManager()) return;
+    const pending = records('students').filter(student => {
+      if (!student.photo_path) return false;
+      const fileName = String(student.photo_path).split('/').pop() || '';
+      return fileName.split('.')[0] !== student.id;
+    });
+    for (const student of pending) {
+      const oldPath = student.photo_path;
+      const extension = photoExtension(oldPath);
+      const newPath = `${state.currentSchoolId}/students/${student.id}.${extension}`;
+      try {
+        const objectPath = oldPath.split('/').map(encodeURIComponent).join('/');
+        const download = await fetch(`${supabaseUrl}/storage/v1/object/school-media/${objectPath}`, {
+          headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${state.token}` }
+        });
+        if (!download.ok) throw new Error(`Could not read the existing photo (${download.status}).`);
+        const blob = await download.blob();
+        const file = blob.type ? blob : new Blob([blob], { type: mimeForExtension(extension) });
+        await uploadImage(newPath, file);
+        await api(`students?id=eq.${encodeURIComponent(student.id)}`, {
+          method: 'PATCH',
+          body: { photo_path: newPath },
+          prefer: 'return=minimal'
+        });
+        student.photo_path = newPath;
+        await removeImage(oldPath);
+      } catch (error) {
+        console.warn('Could not migrate the photo for student', student.id, error);
+      }
+    }
+    if (pending.length) await refreshImageUrls();
+  };
 
   const saveRow = async (table, row, id) => {
     const scopedRow = { ...row, school_id: state.currentSchoolId };
@@ -336,8 +388,8 @@
       : profile.role === 'admin'
         ? Object.keys(labels).filter(view => view !== 'accounts')
         : profile.role === 'teacher'
-          ? ['overview', 'students', 'academics', 'attendance', 'assessments', 'reports']
-          : ['overview', 'attendance', 'assessments', 'reports'];
+          ? ['overview', 'students', 'academics', 'attendance', 'assessments', 'reports', 'reportcards']
+          : ['overview', 'attendance', 'assessments', 'reports', 'reportcards'];
     document.querySelectorAll('[data-view]').forEach(button => {
       const allowed = allowedViews.includes(button.dataset.view);
       button.classList.toggle('hidden', !allowed);
@@ -401,6 +453,7 @@
       }
       state.currentSchoolId = state.profile.school_id;
       await refreshData();
+      await migrateLegacyStudentPhotos();
       if (['developer', 'admin'].includes(state.profile.role) && currentSchool().name !== SCHOOL_NAME) {
         await api(`schools?id=eq.${encodeURIComponent(state.currentSchoolId)}`, {
           method: 'PATCH',
@@ -459,8 +512,8 @@
   const studentsTable = (rows, controls = true) => {
     if (!rows.length) return `<div class="empty-state"><strong>No student records yet</strong>Add students to start tracking classes, attendance, and results.</div>`;
     const canManage = isManager();
-    return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Student ID</th><th>Class</th><th>Guardian</th><th>Status</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>
-      ${rows.map(row => `<tr><td><div class="person-cell">${photo(row, row.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}<span><strong>${escapeHtml(row.full_name)}</strong><small>${escapeHtml(row.gender || 'Student')}</small></span></div></td><td>${escapeHtml(row.student_id || 'Assigned on save')}</td><td>${escapeHtml(className(row.class_id))}</td><td>${escapeHtml(row.guardian_name || '—')}</td><td><span class="status-pill">${escapeHtml(row.status || 'Active')}</span></td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="students" data-id="${escapeHtml(row.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="students" data-id="${escapeHtml(row.id)}">Remove</button></td>` : ''}</tr>`).join('')}
+    return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Student ID</th><th>Roll No.</th><th>Class</th><th>Guardian</th><th>Status</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>
+      ${rows.map(row => `<tr><td><div class="person-cell">${photo(row, row.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}<span><strong>${escapeHtml(row.full_name)}</strong><small>${escapeHtml(row.gender || 'Student')}</small></span></div></td><td>${escapeHtml(row.student_id || 'Assigned on save')}</td><td>${escapeHtml(studentRollNumber(row))}</td><td>${escapeHtml(className(row.class_id))}</td><td>${escapeHtml(row.guardian_name || '—')}</td><td><span class="status-pill">${escapeHtml(row.status || 'Active')}</span></td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="students" data-id="${escapeHtml(row.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="students" data-id="${escapeHtml(row.id)}">Remove</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>`;
   };
 
@@ -893,6 +946,297 @@
       <section class="panel" style="margin-top:16px"><header class="panel-header"><div><h2>Student results</h2><p>Recorded assessment scores and class averages</p></div></header><div class="panel-body">${marks.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Class</th><th>Assessment</th><th>Score</th><th>Result</th></tr></thead><tbody>${marks.map(mark => { const test = records('assessments').find(row => row.id === mark.assessment_id); const student = records('students').find(row => row.id === mark.student_id); return student && test ? `<tr><td>${escapeHtml(student.full_name)}</td><td>${escapeHtml(className(student.class_id))}</td><td>${escapeHtml(test.title)}</td><td>${escapeHtml(mark.score)} / ${escapeHtml(test.max_marks)}</td><td><span class="status-pill">${Math.round(mark.score / test.max_marks * 100)}%</span></td>` : ''; }).join('')}</tbody></table></div>` : '<div class="empty-state">Marks appear here after teachers record assessment results.</div>'}</div></section>`;
   };
 
+  const reportCardMonths = () => termMonths[normalizedTerm(state.reportCardTerm)];
+
+  const reportCardScopeMonths = (scope = state.reportCardScope) => {
+    const months = reportCardMonths();
+    if (!months.length) return [];
+    if (scope === 'term') return months;
+    const stored = Number(state.reportCardMonth);
+    const match = months.find(item => item.month === stored);
+    return match ? [match] : [months[0]];
+  };
+
+  const reportCardSubjectSummaries = (student, scope) => {
+    const term = normalizedTerm(state.reportCardTerm);
+    const month = Number(state.reportCardMonth || 0);
+    const years = reportCardTermYears(state.reportCardTerm);
+    const markIndex = new Map(records('marks').map(mark => [`${mark.assessment_id}:${mark.student_id}`, mark]));
+    const assignments = records('class_subjects').filter(row => row.class_id === student.class_id);
+    return assignments.map(assignment => {
+      const assessments = records('assessments').filter(row => {
+        if (row.class_id !== student.class_id || row.subject_id !== assignment.subject_id) return false;
+        if (normalizedTerm(row.term) !== term) return false;
+        const date = String(row.assessment_date || '');
+        if (!years.includes(Number(date.slice(0, 4)))) return false;
+        if (scope === 'term') return true;
+        return row.assessment_type === 'Monthly test' && Number(date.slice(5, 7)) === month;
+      }).sort((a, b) => a.assessment_date.localeCompare(b.assessment_date));
+      const total = assessments.reduce((sum, row) => sum + Number(row.max_marks), 0);
+      const obtained = assessments.reduce((sum, row) => {
+        const mark = markIndex.get(`${row.id}:${student.id}`);
+        return sum + (mark ? Number(mark.score) : 0);
+      }, 0);
+      const percentage = total ? obtained / total * 100 : null;
+      return {
+        subject: subjectName(assignment.subject_id),
+        teacher: teacherName(assignment.teacher_id),
+        total,
+        obtained,
+        percentage,
+        grade: percentage === null ? '—' : gradeForPercentage(percentage)
+      };
+    }).filter(row => row.total > 0);
+  };
+
+  const reportCardTermYears = (term) => {
+    const baseYear = Number(currentSchool().academic_year) || new Date().getFullYear();
+    return normalizedTerm(term) === '2nd Term' ? [baseYear + 1] : [baseYear];
+  };
+
+  // Term exams are scheduled in December (1st Term) and May (2nd Term), so a
+  // term report must include that month when totalling attendance.
+  const reportCardAttendanceMonths = scope => {
+    const months = reportCardScopeMonths(scope);
+    if (scope !== 'term') return months;
+    const examMonth = normalizedTerm(state.reportCardTerm) === '2nd Term' ? 5 : 12;
+    return months.some(item => item.month === examMonth)
+      ? months
+      : [...months, { month: examMonth, label: 'Term exam' }];
+  };
+
+  const studentRollNumber = student => {
+    const stored = String(student.roll_number || '').trim();
+    if (stored) return stored;
+    const classmates = records('students')
+      .filter(row => row.class_id === student.class_id)
+      .sort((a, b) => String(a.full_name).localeCompare(String(b.full_name)));
+    const position = classmates.findIndex(row => row.id === student.id);
+    return position >= 0 ? String(position + 1).padStart(2, '0') : '—';
+  };
+
+  const reportCardAttendanceSummary = (student, scope) => {
+    const scopeMonths = reportCardAttendanceMonths(scope);
+    const years = reportCardTermYears(state.reportCardTerm);
+    const rows = records('attendance').filter(row => {
+      if (row.student_id !== student.id) return false;
+      const date = String(row.attendance_date || '');
+      const month = Number(date.slice(5, 7));
+      const year = Number(date.slice(0, 4));
+      return scopeMonths.some(item => item.month === month) && years.includes(year);
+    });
+    const present = rows.filter(row => row.status === 'present').length;
+    const absent = rows.filter(row => row.status === 'absent').length;
+    const leave = rows.filter(row => row.status === 'leave').length;
+    const workingDates = new Set(rows.filter(row => row.status !== 'holiday').map(row => row.attendance_date));
+    const workingDays = workingDates.size;
+    return {
+      workingDays,
+      present,
+      absent,
+      leave,
+      rate: workingDays ? Math.round(present / workingDays * 100) : 0
+    };
+  };
+
+  const reportCardRemark = (average, scope) => {
+    if (average === null) return 'No marks have been recorded for this period yet.';
+    if (average >= 90) return 'Excellent performance. Shows great dedication.';
+    if (average >= 80) return 'Very good performance. Keep up the excellent work.';
+    if (average >= 70) return 'Good performance. A little more practice will secure a higher grade.';
+    if (average >= 60) return 'Satisfactory performance. More revision is advised.';
+    return 'Needs improvement. Please concentrate on each subject to raise the grade.';
+  };
+
+  const reportCardGraph = (points, passLine, compact = false) => {
+    const width = 520;
+    const height = compact ? 74 : 120;
+    const pad = compact
+      ? { top: 8, right: 10, bottom: 16, left: 26 }
+      : { top: 12, right: 12, bottom: 22, left: 32 };
+    const innerWidth = width - pad.left - pad.right;
+    const innerHeight = height - pad.top - pad.bottom;
+    const scale = value => pad.top + innerHeight - (Math.max(0, Math.min(100, value)) / 100) * innerHeight;
+    const step = points.length > 1 ? innerWidth / (points.length - 1) : 0;
+    const coordinates = points.map((point, index) => ({
+      x: pad.left + (points.length > 1 ? index * step : innerWidth / 2),
+      y: scale(point.percentage ?? 0)
+    }));
+    const line = coordinates.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+    const area = coordinates.length
+      ? `${line} L${coordinates[coordinates.length - 1].x.toFixed(1)},${(pad.top + innerHeight).toFixed(1)} L${coordinates[0].x.toFixed(1)},${(pad.top + innerHeight).toFixed(1)} Z`
+      : '';
+    const gridLines = [0, 25, 50, 75, 100].map(value =>
+      `<line x1="${pad.left}" y1="${scale(value).toFixed(1)}" x2="${width - pad.right}" y2="${scale(value).toFixed(1)}" stroke="#e4e8e4" stroke-width="1"/>
+       <text x="${pad.left - 5}" y="${(scale(value) + 3).toFixed(1)}" text-anchor="end" font-size="${compact ? 7 : 8}" fill="#8b958e">${value}</text>`).join('');
+    const markers = coordinates.map((point, index) =>
+      `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${compact ? 2.4 : 3}" fill="#1a6a4e"/>
+       <text x="${point.x.toFixed(1)}" y="${(pad.top + innerHeight + (compact ? 11 : 13)).toFixed(1)}" text-anchor="middle" font-size="${compact ? 7 : 8}" fill="#6b766e">${escapeHtml(points[index].label.slice(0, compact ? 5 : 6))}</text>`).join('');
+    const passY = scale(passLine);
+    return `<svg class="report-card-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Subject marks trend">
+      ${gridLines}
+      <line x1="${pad.left}" y1="${passY.toFixed(1)}" x2="${width - pad.right}" y2="${passY.toFixed(1)}" stroke="#e0a23a" stroke-width="1.4" stroke-dasharray="5 4"/>
+      ${area ? `<path d="${area}" fill="rgba(26,106,78,.08)"/>` : ''}
+      ${coordinates.length ? `<path d="${line}" fill="none" stroke="#1a6a4e" stroke-width="2"/>` : ''}
+      ${markers}
+    </svg>`;
+  };
+
+  const reportCardSheet = (student, scope) => {
+    const school = currentSchool();
+    const term = normalizedTerm(state.reportCardTerm);
+    const months = reportCardScopeMonths(scope);
+    const monthLabel = scope === 'term' ? term : months[0]?.label || 'Month';
+    const session = school.academic_year || String(new Date().getFullYear());
+    const sessionLabel = /^\d{4}$/.test(session) ? `${session}-${Number(session) + 1}` : session;
+    const logo = school.logo_path ? (state.imageUrls[school.logo_path] || '') : BRAND_LOGO;
+    const subjects = reportCardSubjectSummaries(student, scope);
+    const attendance = reportCardAttendanceSummary(student, scope);
+    const scored = subjects.filter(row => row.percentage !== null);
+    const average = scored.length
+      ? Math.round(scored.reduce((sum, row) => sum + row.percentage, 0) / scored.length)
+      : null;
+    const gender = student.gender || 'Not stated';
+    const photo = imageSrc(student);
+    const rollNumber = studentRollNumber(student);
+    const title = scope === 'term'
+      ? `TERM REPORT CARD - ${term.toUpperCase()}`
+      : `MONTHLY PROGRESS REPORT - ${String(monthLabel).toUpperCase()}`;
+    const subjectRows = subjects.length
+      ? subjects.map((row, index) => `<tr>
+          <td class="report-card-subject-sn">${index + 1}</td>
+          <td class="report-card-subject">${escapeHtml(row.subject)}</td>
+          <td>${escapeHtml(row.total)}</td>
+          <td>${escapeHtml(row.obtained)}</td>
+          <td>${row.percentage === null ? '—' : `${Math.round(row.percentage)}%`}</td>
+          <td>${escapeHtml(row.grade)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="report-card-empty">No assessments recorded for this period.</td></tr>';
+    const graphPoints = subjects.map(row => ({ label: row.subject, percentage: row.percentage }));
+    const high = graphPoints.length ? Math.max(...graphPoints.map(point => point.percentage ?? 0)) : 0;
+    const low = graphPoints.length ? Math.min(...graphPoints.map(point => point.percentage ?? 0)) : 0;
+    const trend = graphPoints.length < 2 ? 'Not enough data' : high - low > 20 ? 'Volatile' : high - low > 10 ? 'Steady' : 'Consistent';
+    return `<article class="report-card-sheet report-card-sheet--${scope === 'term' ? 'term' : 'monthly'}">
+      <header class="report-card-head">
+        <div class="report-card-brand">
+          <span class="report-card-logo"><img src="${escapeHtml(logo)}" alt=""></span>
+          <div>
+            <strong>${escapeHtml(school.name || SCHOOL_NAME)}</strong>
+            <span>INSTITUTIONAL REPORTING CENTRE</span>
+            <span class="report-card-brand-sub">${scope === 'term' ? 'TERMLY PROGRESS REPORT' : `${escapeHtml(String(school.name || SCHOOL_NAME).split(/\s+/)[0].toUpperCase())} ACADEMIC PROGRESS SHEET`}</span>
+          </div>
+        </div>
+        <div class="report-card-stamp">
+          <strong>${escapeHtml(String(monthLabel).toUpperCase())}</strong>
+          <span>SESSION ${escapeHtml(scope === 'term' ? session : sessionLabel)}</span>
+        </div>
+      </header>
+      <section class="report-card-identity">
+        <div class="report-card-identity-lines">
+          <h2 class="report-card-title">${escapeHtml(title)}</h2>
+          <p><span>Student Name: <strong>${escapeHtml(student.full_name)}</strong></span><span class="report-card-gender">Gender: <strong>${escapeHtml(gender.slice(0, 1).toUpperCase())}</strong>${scope === 'term' ? ` (${escapeHtml(gender)})` : ` <em class="report-card-gender-badge">${escapeHtml(gender)}</em>`}</span></p>
+          <p>Student ID: <strong>${escapeHtml(student.student_id || 'Not assigned')}</strong></p>
+          <p>Roll No: <strong>${escapeHtml(rollNumber)}</strong></p>
+          <p>Grade: <strong>${escapeHtml(className(student.class_id))}</strong></p>
+        </div>
+        <span class="report-card-photo">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(student.full_name)}">` : '<em>No photo</em>'}</span>
+      </section>
+      <table class="report-card-table">
+        <thead><tr><th>S.n</th><th>Subject</th><th>Total</th><th>Obtained</th><th>Achievement Index</th><th>Grade</th></tr></thead>
+        <tbody>${subjectRows}</tbody>
+      </table>
+      <div class="report-card-panels">
+        <section class="report-card-panel report-card-attendance">
+          <h3>${scope === 'term' ? 'TERM ATTENDANCE' : 'MONTHLY ATTENDANCE'}</h3>
+          <table class="report-card-attendance-table">
+            <thead><tr><th>ATTENDANCE</th><th>DAYS</th></tr></thead>
+            <tbody>
+              <tr><td>TOTAL WORKING DAYS</td><td>${escapeHtml(attendance.workingDays)}</td></tr>
+              <tr><td>${scope === 'term' ? 'Present' : 'PRESENT'}</td><td>${escapeHtml(attendance.present)}</td></tr>
+              <tr><td>${scope === 'term' ? 'Absent' : 'ABSENT'}</td><td>${escapeHtml(attendance.absent)}</td></tr>
+              ${scope === 'term' ? `<tr><td>Leave</td><td>${escapeHtml(attendance.leave)}</td></tr>` : ''}
+            </tbody>
+          </table>
+        </section>
+        <div class="report-card-side">
+          <section class="report-card-panel report-card-average">
+            <h3>AVERAGE %</h3>
+            <strong>${average === null ? '—' : `${average}%`}</strong>
+          </section>
+          <section class="report-card-panel report-card-remarks">
+            <h3>PRINCIPAL'S REMARKS</h3>
+            <p>${escapeHtml(reportCardRemark(average, scope))}</p>
+          </section>
+        </div>
+      </div>
+      <section class="report-card-panel report-card-graph-panel">
+        <div class="report-card-graph-head">
+          <div><h3>Subject-Wise Marks Achievement Line Graph</h3>
+            <p>Student: <strong>${escapeHtml(student.full_name)}</strong> &nbsp; Class: <strong>${escapeHtml(className(student.class_id))}</strong> &nbsp; Session: <strong>${escapeHtml(scope === 'term' ? session : sessionLabel)}</strong> &nbsp; ${scope === 'term' ? 'Term' : 'Month'}: <strong>${escapeHtml(monthLabel)}</strong></p></div>
+          <div class="report-card-legend"><span class="marks">Marks line</span><span class="pass">80% pass</span></div>
+        </div>
+        ${reportCardGraph(graphPoints, 80, scope !== 'term')}
+        <div class="report-card-graph-foot"><span>HIGH ${Math.round(high)}% &nbsp;·&nbsp; AVERAGE ${average === null ? '—' : `${average}%`} &nbsp;·&nbsp; LOW ${Math.round(low)}%</span><span>TREND: ${escapeHtml(trend.toUpperCase())}</span></div>
+      </section>
+      <footer class="report-card-signatures">
+        <div><span></span><strong>Class Teacher Signature</strong></div>
+        <div><span></span><strong>Principal Signature</strong></div>
+      </footer>
+    </article>`;
+  };
+
+  // __REPORT_CARD_CONTINUE__
+
+  const reportCardStudents = () => {
+    const permitted = new Set(permittedStudents());
+    return records('students')
+      .filter(student => permitted.has(student.id))
+      .filter(student => !state.reportCardClass || student.class_id === state.reportCardClass)
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  };
+
+  const reportCardPermittedStudents = () => {
+    const permitted = new Set(permittedStudents());
+    return records('students').filter(student => permitted.has(student.id));
+  };
+
+  const reportCardsView = () => {
+    const scope = state.reportCardScope === 'term' ? 'term' : 'monthly';
+    const months = reportCardMonths();
+    const students = reportCardStudents();
+    const classOptions = records('classes')
+      .filter(row => reportCardPermittedStudents().some(student => student.class_id === row.id) || isManager());
+    if (!state.reportCardClass && classOptions.length === 1) state.reportCardClass = classOptions[0].id;
+    if (state.reportCardStudentId && !students.some(student => student.id === state.reportCardStudentId)) {
+      state.reportCardStudentId = '';
+    }
+    if (!state.reportCardStudentId && students.length) state.reportCardStudentId = students[0].id;
+    const student = students.find(row => row.id === state.reportCardStudentId);
+    if (!state.reportCardMonth && months.length) state.reportCardMonth = String(months[0].month);
+    const monthOptions = months.map(item => `<option value="${item.month}" ${Number(state.reportCardMonth) === item.month ? 'selected' : ''}>${escapeHtml(item.label)}</option>`).join('');
+    const scopeToggle = `<div class="report-card-scope" role="group" aria-label="Report period">
+      <button type="button" class="button button-small ${scope === 'monthly' ? 'button-primary' : 'button-outline'}" data-report-card-scope="monthly">Monthly report</button>
+      <button type="button" class="button button-small ${scope === 'term' ? 'button-primary' : 'button-outline'}" data-report-card-scope="term">Term report</button>
+    </div>`;
+    const toolbar = `<section class="report-card-toolbar">
+      ${scopeToggle}
+      <label class="field-label">Class<select class="field-select" data-report-card-class><option value="">All classes</option>${classOptions.map(row => `<option value="${escapeHtml(row.id)}" ${row.id === state.reportCardClass ? 'selected' : ''}>${escapeHtml(row.name)}</option>`).join('')}</select></label>
+      <label class="field-label">Student<select class="field-select" data-report-card-student><option value="">Select a student</option>${students.map(row => `<option value="${escapeHtml(row.id)}" ${row.id === state.reportCardStudentId ? 'selected' : ''}>${escapeHtml(row.full_name)} · ${escapeHtml(className(row.class_id))}</option>`).join('')}</select></label>
+      <label class="field-label">Term<select class="field-select" data-report-card-term><option value="1st Term" ${normalizedTerm(state.reportCardTerm) === '1st Term' ? 'selected' : ''}>1st Term</option><option value="2nd Term" ${normalizedTerm(state.reportCardTerm) === '2nd Term' ? 'selected' : ''}>2nd Term</option></select></label>
+      ${scope === 'monthly' ? `<label class="field-label">Month<select class="field-select" data-report-card-month>${monthOptions}</select></label>` : ''}
+      <div class="report-card-toolbar-actions">
+        <button type="button" class="button button-outline button-small" data-print-report-card>${scope === 'term' ? 'Print term report' : 'Print monthly report'}</button>
+        <button type="button" class="button button-primary button-small" data-report-card-pdf>Save as PDF</button>
+      </div>
+    </section>`;
+    const body = student
+      ? reportCardSheet(student, scope)
+      : '<div class="empty-state"><strong>No student selected</strong>Choose a class and student to generate a report card.</div>';
+    return `${pageHeading('REPORT CARDS', 'Progress reports', 'Monthly and term progress reports ready to print or export.', '')}
+      ${toolbar}
+      <div class="report-card-stage">${body}</div>`;
+  };
+
   const schoolSettingsView = () => {
     const school = currentSchool();
     const logo = school.logo_preview || state.imageUrls[school.logo_path] || '';
@@ -963,6 +1307,7 @@
       attendance: attendanceView,
       assessments: assessmentsView,
       reports: reportsView,
+      reportcards: reportCardsView,
       accounts: accountsView,
       school: schoolSettingsView
     };
@@ -1023,6 +1368,7 @@
         field('full_name', 'Full name', 'text', row.full_name, null, true),
         field('gender', 'Gender', 'select', row.gender || '', [{ value: '', label: 'Select gender' }, ...['Female', 'Male', 'Other'].map(value => ({ value, label: value }))]),
         field('class_id', 'Class', 'select', row.class_id || '', optionList(records('classes'), 'name', 'Select class'), true),
+        field('roll_number', 'Roll number', 'text', row.roll_number),
         field('guardian_name', 'Parent / guardian', 'text', row.guardian_name),
         field('guardian_phone', 'Guardian phone', 'tel', row.guardian_phone),
         field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value })))
@@ -1131,6 +1477,22 @@
   };
 
   const handleClick = async event => {
+    const reportCardScopeButton = event.target.closest('[data-report-card-scope]');
+    if (reportCardScopeButton) {
+      state.reportCardScope = reportCardScopeButton.dataset.reportCardScope;
+      goToView('reportcards');
+      return;
+    }
+    if (event.target.closest('[data-print-report-card]')) {
+      document.body.classList.add('printing-report-card');
+      window.print();
+      return;
+    }
+    if (event.target.closest('[data-report-card-pdf]')) {
+      document.body.classList.add('printing-report-card');
+      window.print();
+      return;
+    }
     const termButton = event.target.closest('[data-gradebook-term]');
     if (termButton) {
       state.assessmentTerm = termButton.dataset.gradebookTerm;
@@ -1262,6 +1624,32 @@
   };
 
   const handlePageChange = event => {
+    const target = event.target;
+    if (target.matches('[data-report-card-class]')) {
+      state.reportCardClass = target.value;
+      state.reportCardStudentId = '';
+      goToView('reportcards');
+      return;
+    }
+    if (target.matches('[data-report-card-student]')) {
+      state.reportCardStudentId = target.value;
+      goToView('reportcards');
+      return;
+    }
+    if (target.matches('[data-report-card-term]')) {
+      state.reportCardTerm = target.value;
+      const months = reportCardMonths();
+      if (!months.some(item => item.month === Number(state.reportCardMonth))) {
+        state.reportCardMonth = months.length ? String(months[0].month) : '';
+      }
+      goToView('reportcards');
+      return;
+    }
+    if (target.matches('[data-report-card-month]')) {
+      state.reportCardMonth = target.value;
+      goToView('reportcards');
+      return;
+    }
     if (event.target.id === 'gradebookClass') {
       const assignment = gradebookAssignments().find(row => row.class_id === event.target.value);
       state.assessmentAssignmentId = assignment?.id || '';
@@ -1503,7 +1891,7 @@
       let uploadedPath = '';
       if (hasPhoto) {
         const folder = table === 'students' ? 'students' : 'teachers';
-        uploadedPath = `${state.currentSchoolId}/${folder}/${crypto.randomUUID()}.${imageExtension(file)}`;
+        uploadedPath = `${state.currentSchoolId}/${folder}/${savedRecord.id}.${imageExtension(file)}`;
         try {
           await uploadImage(uploadedPath, file);
           savedRecord = await saveRow(table, { photo_path: uploadedPath }, savedRecord.id);
@@ -1760,7 +2148,10 @@
 
   const initialize = () => {
     const configured = isConfigured;
-    window.addEventListener('afterprint', () => document.body.classList.remove('printing-class-strength'));
+    window.addEventListener('afterprint', () => {
+      document.body.classList.remove('printing-class-strength');
+      document.body.classList.remove('printing-report-card');
+    });
     $('#modeBanner').textContent = configured
       ? 'Sign in with the account provided by your school administrator. The app never stores your password.'
       : 'Database setup required. Sample records have been removed and sign-in is unavailable until you connect Supabase. Create a Supabase project, run supabase-schema.sql, then set its Project URL and public anon key in config.js. Never put a service-role key here.';
