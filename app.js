@@ -242,9 +242,13 @@
 
   const saveRow = async (table, row, id) => {
     const scopedRow = { ...row, school_id: state.currentSchoolId };
-    const savedRows = id
-      ? await api(`${table}?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: scopedRow, prefer: 'return=representation' })
-      : await api(table, { method: 'POST', body: { id: id || crypto.randomUUID(), ...scopedRow }, prefer: 'return=representation' });
+    if (id) {
+      const savedRows = await api(`${table}?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', body: scopedRow, prefer: 'return=representation' });
+      if (!savedRows?.length) throw new Error(`Could not confirm that the ${formDefinitions[table].title.toLowerCase()} was saved.`);
+      return savedRows[0];
+    }
+    const newId = row.id || crypto.randomUUID();
+    const savedRows = await api(table, { method: 'POST', body: { ...scopedRow, id: newId }, prefer: 'return=representation' });
     if (!savedRows?.length) throw new Error(`Could not confirm that the ${formDefinitions[table].title.toLowerCase()} was saved.`);
     return savedRows[0];
   };
@@ -1881,36 +1885,52 @@
       const previousPhotoPath = id ? records(table).find(row => row.id === id)?.photo_path : null;
       const hasPhoto = file instanceof File && file.size > 0;
       if (hasPhoto) validateImage(file);
-      // Pre-generation of saveId removed: new records must POST first.
 
+      // For new records with a photo, pre-generate the ID so we can upload
+      // the image first and save everything in one POST.
+      if (hasPhoto && !saveId) {
+        saveId = crypto.randomUUID();
+      }
 
-      savedRecord = await saveRow(table, payload, saveId);
+      let uploadedPath = '';
+      let photoError = null;
+      const folder = table === 'students' ? 'students' : 'teachers';
+
+      if (hasPhoto) {
+        uploadedPath = `${state.currentSchoolId}/${folder}/${saveId}.${imageExtension(file)}`;
+        try {
+          await uploadImage(uploadedPath, file);
+        } catch (error) {
+          photoError = error;
+          uploadedPath = '';
+        }
+      }
+
+      // Include photo_path in payload if upload succeeded
+      const savePayload = { ...payload };
+      if (uploadedPath) {
+        savePayload.photo_path = uploadedPath;
+      }
+      // For new records with a pre-generated ID, include it in the payload
+      if (saveId && !id) {
+        savePayload.id = saveId;
+      }
+
+      savedRecord = await saveRow(table, savePayload, id ? saveId : null);
       state.data[table] = id
         ? records(table).map(row => row.id === savedRecord.id ? savedRecord : row)
         : [...records(table), savedRecord];
 
-      let photoError = null;
-      let uploadedPath = '';
-      if (hasPhoto) {
-        const folder = table === 'students' ? 'students' : 'teachers';
-        uploadedPath = `${state.currentSchoolId}/${folder}/${savedRecord.id}.${imageExtension(file)}`;
-        try {
-          await uploadImage(uploadedPath, file);
-          savedRecord = await saveRow(table, { photo_path: uploadedPath }, savedRecord.id);
-          state.data[table] = records(table).map(row => row.id === savedRecord.id ? savedRecord : row);
-        } catch (error) {
-          photoError = error;
-        }
-      }
-
+      // Clean up previous photo if replaced
       let cleanupError = null;
-      if (!photoError && previousPhotoPath && savedRecord.photo_path !== previousPhotoPath) {
+      if (!photoError && previousPhotoPath && savedRecord.photo_path !== previousPhotoPath && savedRecord.photo_path) {
         try {
           await removeImage(previousPhotoPath);
         } catch (error) {
           cleanupError = error;
         }
       }
+
       dialog.close();
       if (table === 'assessments') {
         const assignment = records('class_subjects').find(item =>
@@ -1928,12 +1948,12 @@
       goToView(state.view);
       if (refreshError) {
         const message = refreshError instanceof Error ? refreshError.message : 'Unknown refresh error.';
-        showToast(`${formDefinitions[table].title} saved, but the latest records could not be reloaded. Your saved record is shown; refresh the page before making another change. ${message}`, true);
+        showToast(`${formDefinitions[table].title} saved, but the latest records could not be reloaded. ${message}`, true);
         return;
       }
       if (photoError) {
         const message = photoError instanceof Error ? photoError.message : 'Unknown picture upload error.';
-        showToast(`${formDefinitions[table].title} details saved, but the picture could not be uploaded or linked. Edit the record and try the picture again. ${message}`, true);
+        showToast(`${formDefinitions[table].title} details saved, but the picture could not be uploaded. ${message}`, true);
         return;
       }
       if (cleanupError) {
