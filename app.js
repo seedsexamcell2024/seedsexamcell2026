@@ -187,7 +187,7 @@
 
   const uploadImage = async (path, file) => {
     const objectPath = path.split('/').map(encodeURIComponent).join('/');
-    const contentType = (file.type === 'image/jpg' ? 'image/jpeg' : file.type) || 'image/jpeg';
+    const contentType = (file.type === 'image/jpg' ? 'image/jpeg' : (file.type || 'application/octet-stream'));
     const response = await fetch(`${supabaseUrl}/storage/v1/object/school-media/${objectPath}`, {
       method: 'POST',
       headers: {
