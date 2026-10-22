@@ -95,6 +95,7 @@
     credit: 'Developer credit',
     homework: 'Homework diary',
     session: 'Session & promotion',
+    branding: 'Branding & labels'
     reminders: 'Teacher reminders'
   };
 
@@ -1494,6 +1495,40 @@
       </section>`;
   };
 
+  const brandingView = () => {
+    const b = window.SEEDS_BRANDING ? window.SEEDS_BRANDING.get() : { labels: {}, fonts: { nav: 1, heading: 1, column: 1 } };
+    const defaults = window.SEEDS_LABEL_DEFAULTS || {};
+    const keys = Object.keys(defaults).sort((a, c) => a.localeCompare(c));
+    const rows = keys.map(k => {
+      const cur = (b.labels && b.labels[k]) ? b.labels[k] : '';
+      return `<div class="branding-row">
+        <label class="branding-default">${escapeHtml(k)}</label>
+        <input class="branding-input" data-brand-key="${escapeHtml(k)}" type="text" value="${escapeHtml(cur)}" placeholder="${escapeHtml(defaults[k])}">
+      </div>`;
+    }).join('');
+    return `${pageHeading('BRANDING', 'Branding & labels', 'Customize headings, button names, column headings, and left-panel names. Empty value keeps the default.', '')}
+      <section class="panel">
+        <header class="panel-header"><div><h2>Font sizes</h2><p>Increase the font size of left-panel names, headings, and column headings.</p></div></header>
+        <div class="panel-body dialog-fields">
+          <label class="field-label">Left panel names <input id="brandFontNav" type="range" min="0.8" max="1.6" step="0.05" value="${b.fonts.nav}"><span id="brandFontNavVal">${b.fonts.nav}</span></label>
+          <label class="field-label">Headings <input id="brandFontHeading" type="range" min="0.8" max="1.6" step="0.05" value="${b.fonts.heading}"><span id="brandFontHeadingVal">${b.fonts.heading}</span></label>
+          <label class="field-label">Column headings <input id="brandFontColumn" type="range" min="0.8" max="1.6" step="0.05" value="${b.fonts.column}"><span id="brandFontColumnVal">${b.fonts.column}</span></label>
+        </div>
+      </section>
+      <section class="panel" style="margin-top:16px">
+        <header class="panel-header"><div><h2>Label overrides</h2><p>Type a new name to override a default. Leave blank to keep the default.</p></div>
+        <div class="panel-body">
+          <input id="brandingSearch" class="table-search" type="search" placeholder="Search labels…" aria-label="Search labels">
+          <div id="brandingList" class="branding-list">${rows}</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="button button-primary" id="brandingSaveButton" type="button">Save branding</button>
+            <button class="button button-outline" id="brandingResetButton" type="button">Reset all to defaults</button>
+          </div>
+        </div>
+      </section>`;
+  };
+
+
   const creditView = () => {
     const credit = state.developerCredit || defaultDeveloperCredit();
     const photo = credit.photo || '';
@@ -1829,6 +1864,7 @@ const remindersView = () => {
       reportcards: reportCardsView,
       accounts: accountsView,
       school: schoolSettingsView,
+       branding: brandingView,
       credit: creditView,
       homework: homeworkView
     };
