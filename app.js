@@ -1869,12 +1869,32 @@ const remindersView = () => {
     return `<label class="${klass}">${escapeHtml(label)}${control}</label>`;
   };
 
-  const imageField = (name, label, value, logo = false, passport = false) => `
-    <label class="field-label full-field">${escapeHtml(label)}
+  const imageField = (name, label, value, logo = false, passport = false, side = false) => `
+    <label class="field-label ${side ? 'student-photo-field' : 'full-field'}">${escapeHtml(label)}
       <img class="image-preview ${logo ? 'logo-preview' : ''} ${passport ? 'passport-preview' : ''}" data-preview-for="${name}" src="${escapeHtml(value || '')}" alt="Current ${escapeHtml(label.toLowerCase())}" ${value ? '' : 'hidden'}>
       <input class="field-input image-upload" type="file" name="${name}" accept="image/jpeg,image/png,image/webp" aria-label="${escapeHtml(label)}">
       <small>Choose an image from your device · JPG, PNG, or WEBP · maximum 5 MB${value ? ' · choose a file to replace the current image' : ''}</small>
     </label>`;
+
+  const customFieldRow = (key = '', value = '') => `
+    <div class="custom-field-row" data-custom-field-row>
+      <input class="field-input" data-custom-field-key type="text" value="${escapeHtml(key)}" placeholder="Field name" aria-label="Custom field name">
+      <input class="field-input" data-custom-field-value type="text" value="${escapeHtml(value)}" placeholder="Value" aria-label="Custom field value">
+      <button type="button" class="icon-button custom-field-remove" data-remove-custom-field aria-label="Remove field">×</button>
+    </div>`;
+
+  const customFieldsEditor = (row = {}) => {
+    const entries = Object.entries(row?.extra_fields || {});
+    return `<div class="full-field custom-fields-editor" data-custom-fields-editor>
+      <div class="custom-fields-head">
+        <div><strong>Additional fields</strong><small>Add any extra information needed for this profile.</small></div>
+        <button type="button" class="button button-outline button-small" data-add-custom-field>Add field</button>
+      </div>
+      <div class="custom-fields-list">
+        ${entries.length ? entries.map(([key, value]) => customFieldRow(key, value)).join('') : ''}
+      </div>
+    </div>`;
+  };
 
   const defaultAssessmentDate = (term, type, assignmentId = state.assessmentAssignmentId, excludeId = '') => {
     const normalized = normalizedTerm(term);
@@ -1898,14 +1918,15 @@ const remindersView = () => {
   const formDefinitions = {
     students: {
       title: 'Student', fields: (row = {}) => [
-        imageField('photo_file', 'Student picture', imageSrc(row), false, true),
+        imageField('photo_file', 'Student picture', imageSrc(row), false, true, true),
         field('full_name', 'Full name', 'text', row.full_name, null, true),
         field('gender', 'Gender', 'select', row.gender || '', [{ value: '', label: 'Select gender' }, ...['Female', 'Male', 'Other'].map(value => ({ value, label: value }))]),
         field('class_id', 'Class', 'select', row.class_id || '', optionList(records('classes'), 'name', 'Select class'), true),
         field('roll_number', 'Roll number', 'text', row.roll_number),
         field('guardian_name', 'Parent / guardian', 'text', row.guardian_name),
         field('guardian_phone', 'Guardian phone', 'tel', row.guardian_phone),
-        field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value })))
+        field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value }))),
+        customFieldsEditor(row)
       ]
     },
     teachers: {
@@ -1914,7 +1935,8 @@ const remindersView = () => {
         field('full_name', 'Full name', 'text', row.full_name, null, true),
         field('email', 'Email address', 'email', row.email),
         field('phone', 'Phone number', 'tel', row.phone),
-        field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value })))
+        field('status', 'Status', 'select', row.status || 'Active', ['Active', 'Inactive'].map(value => ({ value, label: value }))),
+        customFieldsEditor(row)
       ]
     },
     classes: {
@@ -2451,9 +2473,19 @@ const remindersView = () => {
     const dialog = $('#recordDialog');
     const table = dialog.dataset.table;
     const id = dialog.dataset.id;
-    const values = Object.fromEntries(new FormData($('#recordForm')).entries());
+    const form = $('#recordForm');
+    const values = Object.fromEntries(new FormData(form).entries());
     const file = values.photo_file;
-    const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => formDefinitions[table]?.fields && key !== 'photo_file' && !(value instanceof File)));
+    const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => formDefinitions[table]?.fields && key !== 'photo_file' && !key.startsWith('custom_field_') && !(value instanceof File)));
+    if (table === 'students' || table === 'teachers') {
+      const customFields = {};
+      form.querySelectorAll('[data-custom-field-row]').forEach(row => {
+        const key = String(row.querySelector('[data-custom-field-key]')?.value || '').trim();
+        const value = String(row.querySelector('[data-custom-field-value]')?.value || '').trim();
+        if (key) customFields[key] = value;
+      });
+      payload.extra_fields = customFields;
+    }
     if (table === 'students' && !payload.gender) payload.gender = null;
     if (table === 'teachers') {
       payload.email = String(payload.email || '').trim() || null;
@@ -3028,6 +3060,18 @@ const remindersView = () => {
       saveDialog({ preventDefault() {} });
     });
     $('#recordDialog').addEventListener('click', event => {
+      const addButton = event.target.closest('[data-add-custom-field]');
+      if (addButton) {
+        const editor = addButton.closest('[data-custom-fields-editor]');
+        const list = editor?.querySelector('.custom-fields-list');
+        if (list) list.insertAdjacentHTML('beforeend', customFieldRow());
+        return;
+      }
+      const removeButton = event.target.closest('[data-remove-custom-field]');
+      if (removeButton) {
+        removeButton.closest('[data-custom-field-row]')?.remove();
+        return;
+      }
       if (event.target === $('#recordDialog')) $('#recordDialog').close();
       if (event.target.closest('[value="cancel"]')) $('#recordDialog').close();
     });
