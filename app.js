@@ -1002,7 +1002,7 @@
     });
     const permitted = new Set(permittedStudents());
     const students = records('students').filter(student => permitted.has(student.id) &&
-      student.class_id && (!state.attendanceClass || student.class_id === state.attendanceClass) &&
+      (!state.attendanceClass || student.class_id === state.attendanceClass) &&
       (!assignment || student.class_id === assignment.class_id));
     const studentIds = new Set(students.map(student => student.id));
     const monthStart = validMonth ? `${state.attendanceMonth}-01` : '';
@@ -2295,7 +2295,13 @@ const remindersView = () => {
     }
     const attendanceDateButton = event.target.closest('[data-attendance-date]');
     if (attendanceDateButton) {
-      state.attendanceDate = attendanceDateButton.dataset.attendanceDate;
+      const clickedDate = attendanceDateButton.dataset.attendanceDate;
+      const clickedDay = new Date(`${clickedDate}T12:00:00`).getDay();
+      if (clickedDay === 0 || clickedDay === 6) {
+        showToast(`Off day: ${new Date(`${clickedDate}T12:00:00`).toLocaleDateString('en', { weekday: 'long' })} is a weekend. Attendance cannot be taken on Saturdays or Sundays.`, true);
+        return;
+      }
+      state.attendanceDate = clickedDate;
       state.attendanceRangeStart = state.attendanceDate;
       state.attendanceRangeEnd = state.attendanceDate;
       goToView('attendance');
