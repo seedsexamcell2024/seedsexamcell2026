@@ -1,0 +1,64 @@
+﻿TH: 
+TH: ${day.number}
+TH: ${escapeHtml(assessment.title)}<small>Max ${escapeHtml(assessment.max_marks)}</small>
+TH: ${group.term}
+TH: ${month.label}<small>${month.assessment ? 'Max 20' : 'Not set'}</small>
+TH: ${new Intl.DateTimeFormat('en', { weekday: 'short' }).format(day.date).slice(0, 1)}
+TH: <tr><th class="monthly-student-heading" rowspan="2">Student Name
+TH: <tr><th>Assessment
+TH: <tr><th>ATTENDANCE
+TH: <tr><th>Class
+TH: <tr><th>Name
+TH: <tr><th>No.
+TH: <tr><th>S.n
+TH: <tr><th>Sr. No.
+TH: <tr><th>Subject
+TH: <tr><th>Teacher
+TH: A
+TH: Achievement Index
+TH: Boys
+TH: Class
+TH: Class name
+TH: Classes assigned
+TH: Code
+TH: DAILY PRESENT
+TH: Date
+TH: Date of absentee
+TH: DAYS
+TH: Email
+TH: Exam %
+TH: Final %
+TH: G
+TH: Girls
+TH: Grade
+TH: Guardian
+TH: H
+TH: L
+TH: Marks in 60
+TH: Maximum
+TH: Name of student
+TH: Obtained
+TH: P
+TH: Pending items
+TH: Phone
+TH: Photo
+TH: Role
+TH: Roll No.
+TH: S#
+TH: School
+TH: School total strength
+TH: Section
+TH: Set new password
+TH: Status
+TH: Student
+TH: Student ID
+TH: Students
+TH: Subject
+TH: Subjects assigned
+TH: Teacher
+TH: Teacher ID
+TH: Total
+TH: Total strength
+TH: Type
+TH: W
+TH: WhatsApp

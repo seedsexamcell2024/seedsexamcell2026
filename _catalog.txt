@@ -1,0 +1,158 @@
+﻿### BUTTON
+### FIELD
+### H2
+### H3
+### METRIC
+### PAGEHEADING
+### TH
+A
+Ã—
+â–£ Print Transcript
+â€¹
+â€¹ Register View
+â€º
+Academic progress
+Academic session (year)
+ACADEMIC STRUCTURE
+ACCESS CONTROL
+Account type
+Achievement Index
+Active classes
+Add field
+Assessment
+Assessment title
+Assessments
+ASSESSMENTS Â· SUBJECT GRADEBOOK
+ATTENDANCE
+Attendance today
+AVERAGE %
+Average class size
+Boys
+Boys strength
+Class
+Class name
+Class strength summary
+Classes
+Classes assigned
+Close
+Code
+Create account
+Create homework diary
+Create next class
+Create teacher or parent account
+DAILY PRESENT
+Daily register
+Date
+Date of absentee
+DAYS
+Details â†’
+DEVELOPER CREDIT
+Dictate (English)
+Dictate (Urdu)
+Edit
+Email
+Email address
+Entries
+Exam %
+Experience / bio
+Export as PDF
+Export report
+Final %
+Full name
+G
+Gender
+Girls
+Girls strength
+Grade
+Guardian
+Guardian phone
+H
+HOMEWORK DIARY
+Homework text (Urdu / English)
+ï¼‹ Add student
+ï¼‹ New assessment
+L
+Landscape
+Manage credit page
+Marks in 60
+Maximum
+Maximum marks
+Monthly report
+Monthly sheet
+Name
+Name of student
+New academic session (year)
+No.
+Obtained
+P
+Pakistani mobile number
+Parent / guardian
+Pending items
+Phone
+Phone number
+Photo
+Portrait
+PRINCIPAL'S REMARKS
+Project links (one per line: Title | URL)
+Projects
+Promote students
+Recent activity
+Recently added students
+Record audio
+Remove
+Remove login
+REPORT CARDS
+Role
+Roll No.
+Roll number
+S#
+S.n
+Save as PDF
+Save credit page
+Save homework diary
+Save marks
+Save school settings
+Save subject students
+School
+School identity
+School name
+SCHOOL PROFILE
+School total strength
+Section
+Select Class
+SESSION & PROMOTION
+Set new password
+Sr. No.
+Start new session
+Status
+Student
+Student ID
+Student Name
+Students
+STUDENTS DAILY ABSENTEE REPORT
+Subject
+Subject code
+Subject name
+Subjects
+Subjects assigned
+Subject-Wise Marks Achievement Line Graph
+Teacher
+Teacher and parent accounts
+Teacher ID
+Teacher profile
+TEACHER REMINDERS
+Teaching assignments
+Teaching staff
+Term
+Term report
+Toggle both terms
+Topic
+Total
+Total enrolled strength
+Total strength
+Total students
+Type
+View all â†’
+View reports
+W
+WhatsApp
