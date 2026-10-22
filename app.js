@@ -305,10 +305,32 @@
       state.currentSchoolId = schools.find(school => school.id === state.profile.school_id)?.id || schools[0]?.id || '';
     }
     if (!state.currentSchoolId) throw new Error('No school is available for this account. Ask the developer to configure a school.');
-    const tableNames = ['schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'school_holidays', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students', 'homework_diaries', 'homework_receipts', 'absentee_records'];
     const schoolFilter = `school_id=eq.${encodeURIComponent(state.currentSchoolId)}&select=*`;
-    const loaded = await Promise.all(tableNames.map(async table => [table, await api(`${table}?${schoolFilter}`)]));
-    loaded.forEach(([table, rows]) => { state.data[table] = rows; });
+    // Load core tables; school_holidays may not exist yet until the Supabase schema cache is refreshed.
+    const loaded = await Promise.all([
+      ['schools', await api('schools?select=*')],
+      ['students', await api(`students?${schoolFilter}`)],
+      ['teachers', await api(`teachers?${schoolFilter}`)],
+      ['classes', await api(`classes?${schoolFilter}`)],
+      ['subjects', await api(`subjects?${schoolFilter}`)],
+      ['class_subjects', await api(`class_subjects?${schoolFilter}`)],
+      ['subject_enrollments', await api(`subject_enrollments?${schoolFilter}`)],
+      ['attendance', await api(`attendance?${schoolFilter}`)],
+      ['subject_attendance', await api(`subject_attendance?${schoolFilter}`)],
+      ['assessments', await api(`assessments?${schoolFilter}`)],
+      ['marks', await api(`marks?${schoolFilter}`)],
+      ['parent_students', await api(`parent_students?${schoolFilter}`)],
+      ['homework_diaries', await api(`homework_diaries?${schoolFilter}`)],
+      ['homework_receipts', await api(`homework_receipts?${schoolFilter}`)],
+      ['absentee_records', await api(`absentee_records?${schoolFilter}`)]
+    ]);
+    loaded.forEach(([table, rows]) => { state.data[table] = rows || []; });
+    // school_holidays is optional until the Supabase schema cache is refreshed after deployment.
+    try {
+      state.data.school_holidays = await api(`school_holidays?${schoolFilter}`);
+    } catch {
+      state.data.school_holidays = [];
+    }
     await syncAbsenteeRecords().catch(() => {});
     await refreshImageUrls();
   };
