@@ -449,14 +449,14 @@
       return;
     }
     const submit = $('#loginSubmitButton');
-    submit.disabled = true;
+    if (submit) submit.disabled = true;
     const email = mobileToEmail(mobile);
     const password = mobile;
     if (isRegisterMode()) {
       const fullName = String($('#registerNameInput').value || '').trim();
       if (fullName.length < 2) {
         setLoginMessage('Enter your full name to create an account.');
-        submit.disabled = false;
+        if (submit) submit.disabled = false;
         return;
       }
       setLoginMessage('Creating your account…');
@@ -465,7 +465,7 @@
         setLoginMessage('Account created. Signing you in…');
       } catch (error) {
         setLoginMessage(error instanceof Error ? error.message : 'Could not create account.');
-        submit.disabled = false;
+        if (submit) submit.disabled = false;
         return;
       }
     }
@@ -503,7 +503,7 @@
       state.user = null;
       setLoginMessage(error instanceof Error ? error.message : 'Sign in failed.');
     } finally {
-      submit.disabled = false;
+      if (submit) submit.disabled = false;
     }
   };
 
