@@ -56,6 +56,24 @@
     ].map(table => [table, []]))
   };
 
+  const defaultDeveloperCredit = () => ({
+    name: 'A. Rasheed',
+    bio: 'A. Rasheed is a web developer with long and extensive experience in web development, building modern, reliable and user-friendly applications.',
+    photo: '',
+    links: []
+  });
+  const loadDeveloperCredit = () => {
+    try {
+      const raw = localStorage.getItem('developerCredit');
+      if (!raw) return defaultDeveloperCredit();
+      const parsed = JSON.parse(raw);
+      return { ...defaultDeveloperCredit(), ...parsed, links: Array.isArray(parsed?.links) ? parsed.links : [] };
+    } catch (error) {
+      return defaultDeveloperCredit();
+    }
+  };
+  state.developerCredit = loadDeveloperCredit();
+
   const $ = selector => document.querySelector(selector);
   const pageContent = $('#pageContent');
   const toast = $('#toast');
@@ -71,7 +89,8 @@
     reports: 'Reports',
     reportcards: 'Report cards',
     accounts: 'User accounts',
-    school: 'School settings'
+    school: 'School settings',
+    credit: 'Developer credit'
   };
 
   const roleNames = {
@@ -1285,6 +1304,32 @@
       </section>`;
   };
 
+  const creditView = () => {
+    const credit = state.developerCredit || defaultDeveloperCredit();
+    const photo = credit.photo || '';
+    const links = credit.links || [];
+    const isDev = state.profile?.role === 'developer';
+    return `${pageHeading('DEVELOPER CREDIT', 'About the developer', 'Credits and projects by the platform developer.', '')}
+      <section class="panel">
+        <header class="panel-header"><div><h2>${escapeHtml(credit.name || 'Developer')}</h2><p>${escapeHtml(credit.bio || '')}</p></div></header>
+        <div class="panel-body">
+          ${photo ? `<img class="image-preview" src="${escapeHtml(photo)}" alt="Developer photo" style="max-width:220px;border-radius:16px;margin-bottom:12px;">` : ''}
+          <h3>Projects</h3>
+          ${links.length ? `<ul class="developer-links">${links.map(link => `<li><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener">${escapeHtml(link.title || link.url)}</a></li>`).join('')}</ul>` : '<div class="empty-state">No projects listed yet.</div>'}
+        </div>
+      </section>
+      ${isDev ? `<section class="panel" style="margin-top:16px">
+        <header class="panel-header"><div><h2>Manage credit page</h2><p>Update your name, bio, photo, and project links.</p></div></header>
+        <form id="developerCreditForm" class="panel-body dialog-fields">
+          ${field('credit_name', 'Name', 'text', credit.name, null, true, true)}
+          ${field('credit_bio', 'Experience / bio', 'textarea', credit.bio, null, false, true)}
+          ${imageField('credit_photo', 'Developer photo', photo, false)}
+          ${field('credit_links', 'Project links (one per line: Title | URL)', 'textarea', links.map(link => `${link.title || ''} | ${link.url || ''}`).join('\n'), null, false, true)}
+          <div class="full-field"><button class="button button-primary" type="submit">Save credit page</button></div>
+        </form>
+      </section>` : ''}`;
+  };
+
   const accountsView = () => {
     const accountRows = state.accounts.map(account => `<tr><td>${escapeHtml(account.display_name)}</td><td>${escapeHtml(account.mobile || account.phone || 'Mobile unavailable')}</td><td>${escapeHtml(roleNames[account.role] || account.role)}</td><td>${escapeHtml(records('schools').find(school => school.id === account.school_id)?.name || 'School')}</td><td><button class="text-button danger-text" data-action="delete-account" data-id="${escapeHtml(account.id)}">Remove login</button></td></tr>`).join('');
     return `${pageHeading('ACCESS CONTROL', 'User accounts', 'Self-registered and managed accounts. Visible to the developer only.', '')}
@@ -1353,7 +1398,8 @@
       reports: reportsView,
       reportcards: reportCardsView,
       accounts: accountsView,
-      school: schoolSettingsView
+      school: schoolSettingsView,
+      credit: creditView
     };
     pageContent.innerHTML = views[view]();
     $('#navStudentCount').textContent = state.data.students.length;
