@@ -1826,13 +1826,17 @@
   };
 
   const saveDialog = async event => {
-    if (event.submitter?.value !== 'save') return;
+    console.log('saveDialog called', event?.submitter?.value);
+    if (event.submitter && event.submitter.value !== 'save') return;
     event.preventDefault();
     const dialog = $('#recordDialog');
     const table = dialog.dataset.table;
     const id = dialog.dataset.id;
+    console.log('table:', table, 'id:', id);
     const values = Object.fromEntries(new FormData($('#recordForm')).entries());
+    console.log('values:', values);
     const file = values.photo_file;
+    console.log('file:', file, 'isFile:', file instanceof File, 'size:', file?.size);
     const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => formDefinitions[table]?.fields && key !== 'photo_file' && !(value instanceof File)));
     if (table === 'students' && !payload.gender) payload.gender = null;
     if (table === 'teachers') {
@@ -1934,6 +1938,7 @@
       }
       showToast(`${formDefinitions[table].title} ${id ? 'updated' : 'added'}.`);
     } catch (error) {
+      console.error('saveDialog error:', error);
       showToast(error instanceof Error ? error.message : 'Could not save the record.', true);
     }
   };
@@ -2206,6 +2211,7 @@
     $('#recordForm').addEventListener('submit', saveDialog);
     $('#recordDialog').addEventListener('click', event => {
       if (event.target === $('#recordDialog')) $('#recordDialog').close();
+      if (event.target.closest('[value="cancel"]')) $('#recordDialog').close();
     });
     pageContent.addEventListener('click', async event => {
       if (event.target.closest('#saveAttendance')) {
