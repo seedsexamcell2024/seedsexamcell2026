@@ -376,7 +376,7 @@
     state.token = token;
     $('#loginView').classList.add('hidden');
     $('#workspaceView').classList.remove('hidden');
-    const name = profile.display_name || profile.full_name || user?.email || 'School user';
+    const name = profile.display_name || profile.full_name || user?.phone || user?.email || 'School user';
     $('#profileName').textContent = name;
     $('#profileRole').textContent = roleNames[profile.role] || 'School user';
     $('#profileInitials').textContent = name.split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
@@ -423,7 +423,7 @@
     $('#workspaceBrandIcon').src = BRAND_LOGO;
     $('#workspaceView').classList.add('hidden');
     $('#loginView').classList.remove('hidden');
-    $('#passwordInput').value = '';
+    const pw = $('#passwordInput'); if (pw) pw.value = '';
   };
 
   const normalizeMobile = raw => {
@@ -1286,9 +1286,9 @@
   };
 
   const accountsView = () => {
-    const accountRows = state.accounts.map(account => `<tr><td>${escapeHtml(account.display_name)}</td><td>${escapeHtml(account.email || 'Email unavailable')}</td><td>${escapeHtml(roleNames[account.role] || account.role)}</td><td>${escapeHtml(records('schools').find(school => school.id === account.school_id)?.name || 'School')}</td><td><input class="field-input" type="password" minlength="12" autocomplete="new-password" data-reset-password="${escapeHtml(account.id)}" aria-label="New temporary password for ${escapeHtml(account.email || account.display_name)}" placeholder="New password"><button class="text-button" data-action="set-password" data-id="${escapeHtml(account.id)}">Set password</button><button class="text-button danger-text" data-action="delete-account" data-id="${escapeHtml(account.id)}">Remove login</button></td></tr>`).join('');
-    return `${pageHeading('ACCESS CONTROL', 'User accounts', 'Create individual teacher and parent sign-ins and set temporary passwords.', '')}
-      <div class="callout"><strong>Secure accounts</strong> · Each person has a separate login. Give temporary passwords to users privately and ask them to change them after signing in.</div>
+    const accountRows = state.accounts.map(account => `<tr><td>${escapeHtml(account.display_name)}</td><td>${escapeHtml(account.mobile || account.phone || 'Mobile unavailable')}</td><td>${escapeHtml(roleNames[account.role] || account.role)}</td><td>${escapeHtml(records('schools').find(school => school.id === account.school_id)?.name || 'School')}</td><td><button class="text-button danger-text" data-action="delete-account" data-id="${escapeHtml(account.id)}">Remove login</button></td></tr>`).join('');
+    return `${pageHeading('ACCESS CONTROL', 'User accounts', 'Self-registered and managed accounts. Visible to the developer only.', '')}
+      <div class="callout"><strong>Mobile number sign-in</strong> · Users sign in with their Pakistani mobile number.</div>
       <section class="panel"><header class="panel-header"><div><h2>Create teacher or parent account</h2><p>Credentials are created by the protected Supabase function, never in this browser database.</p></div></header>
         <form id="createAccountForm" class="panel-body dialog-fields">
           ${field('role', 'Account type', 'select', 'teacher', [{ value: 'teacher', label: 'Teacher' }, { value: 'parent', label: 'Parent / guardian' }], true)}
