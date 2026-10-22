@@ -1394,6 +1394,81 @@
     if (average >= 40) return 'Needs improvement. Concentrate on weak subjects and complete all assignments.';
     return 'Below 40% average. Immediate remedial support and consistent practice are required.';
   };
+// Calculate monthly attendance totals (P/A/L/H counts) per student per month
+const calculateMonthlyTotals = () => {
+  const allRecords = records('attendance');
+  // Group by student_id and month (MM from YYYY-MM-DD)
+  const monthlyMap = new Map(); // key: `${student_id}-${month}`
+
+  for (const row of allRecords) {
+    if (!row.student_id || !row.attendance_date) continue;
+    const studentId = row.student_id;
+    const date = String(row.attendance_date);
+    const month = date.slice(5, 7); // MM
+    const status = row.status || '';
+
+    const key = `${studentId}-${month}`;
+    if (!monthlyMap.has(key)) {
+      monthlyMap.set(key, { P: 0, A: 0, L: 0, H: 0 });
+    }
+    const counts = monthlyMap.get(key);
+    if (status === 'present') counts.P++;
+    else if (status === 'absent') counts.A++;
+    else if (status === 'leave') counts.L++;
+    else if (status === 'holiday') counts.H++;
+  }
+
+  // Attach monthlyTotals to each student record
+  const students = records('students');
+  for (const student of students) {
+    student.monthlyTotals = {};
+    // Collect distinct months this student has records for
+    const studentMonths = new Set();
+    for (const row of allRecords) {
+      if (row.student_id !== student.id) continue;
+      const month = String(row.attendance_date).slice(5, 7);
+      studentMonths.add(month);
+    }
+    for (const month of studentMonths) {
+      const key = `${student.id}-${month}`;
+      student.monthlyTotals[month] = monthlyMap.get(key) || { P: 0, A: 0, L: 0, H: 0 };
+    }
+  }
+};
+
+// Calculate term totals by summing monthly totals across term months
+// Term months: 1st Term = Sep-Nov (9,10,11), 2nd Term = Feb-Apr (2,3,4)
+const calculateTermTotals = () => {
+  const term = normalizedTerm(state.reportCardTerm);
+  const termMonthMap = {
+    '1st Term': [9, 10, 11],
+    '2nd Term': [2, 3, 4]
+  };
+  const monthNumbers = termMonthMap[term] || [];
+
+  const students = records('students');
+  for (const student of students) {
+    student.termTotals = { P: 0, A: 0, L: 0, H: 0 };
+
+    if (!student.monthlyTotals) continue;
+
+    for (const month of monthNumbers) {
+      const monthly = student.monthlyTotals[month];
+      if (monthly) {
+        student.termTotals.P += monthly.P || 0;
+        student.termTotals.A += monthly.A || 0;
+        student.termTotals.L += monthly.L || 0;
+        student.termTotals.H += monthly.H || 0;
+      }
+    }
+  }
+};
+
+// Populate monthlyTotals and termTotals when switching to attendance view
+if (state.view === 'attendance') {
+  calculateMonthlyTotals();
+  calculateTermTotals();
+}
 
   const reportCardGraph = (points, passLine, compact = false) => {
     const width = 520;
