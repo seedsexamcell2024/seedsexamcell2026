@@ -1,0 +1,57 @@
+  let homeworkRecording = false;
+  let homeworkChunks = [];
+  const startHomeworkVoice = lang => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      showToast('Voice recognition is not supported in this browser.', true);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = lang;
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.onresult = event => {
+      const transcript = Array.from(event.results).map(result => result[0].transcript).join(' ');
+      const field = document.querySelector('[name="homework_content"]');
+      if (field && event.results[event.results.length - 1].isFinal) {
+        field.value = `${field.value ? `${field.value} ` : ''}${transcript}`.trim();
+      }
+    };
+    recognition.onerror = event => showToast(`Voice recognition error: ${event.error}`, true);
+    recognition.start();
+  };
+  const toggleHomeworkRecording = async () => {
+    const status = document.getElementById('homeworkRecordStatus');
+    const btn = document.getElementById('homeworkRecordBtn');
+    if (!homeworkRecording) {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        showToast('Audio recording is not supported in this browser.', true);
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        homeworkChunks = [];
+        recorder.ondataavailable = event => {
+          if (event.data?.size) homeworkChunks.push(event.data);
+        };
+        recorder.onstop = () => {
+          const blob = new Blob(homeworkChunks, { type: recorder.mimeType || 'audio/webm' });
+          window.pendingHomeworkAudio = blob;
+          stream.getTracks().forEach(track => track.stop());
+          if (status) status.textContent = 'Audio recorded. It will be uploaded when you save.';
+          if (btn) btn.textContent = 'Record audio';
+          homeworkRecording = false;
+        };
+        recorder.start();
+        window.homeworkRecorder = recorder;
+        homeworkRecording = true;
+        if (btn) btn.textContent = 'Stop recording';
+        if (status) status.textContent = 'Recording...';
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Could not start recording.', true);
+      }
+    } else if (window.homeworkRecorder) {
+      window.homeworkRecorder.stop();
+    }
+  };
