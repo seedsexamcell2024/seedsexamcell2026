@@ -410,8 +410,8 @@
       : profile.role === 'admin'
         ? Object.keys(labels).filter(view => view !== 'accounts')
         : profile.role === 'teacher'
-          ? ['overview', 'students', 'academics', 'attendance', 'assessments', 'reports', 'reportcards']
-          : ['overview', 'attendance', 'assessments', 'reports', 'reportcards'];
+          ? ['overview', 'students', 'academics', 'attendance', 'assessments', 'reports', 'reportcards', 'credit']
+          : ['overview', 'attendance', 'assessments', 'reports', 'reportcards', 'credit'];
     document.querySelectorAll('[data-view]').forEach(button => {
       const allowed = allowedViews.includes(button.dataset.view);
       button.classList.toggle('hidden', !allowed);
@@ -2085,6 +2085,46 @@
     }
   };
 
+  const saveDeveloperCredit = async event => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const name = String(formData.get('credit_name') || '').trim();
+    const bio = String(formData.get('credit_bio') || '').trim();
+    const file = formData.get('credit_photo');
+    const linksText = String(formData.get('credit_links') || '').trim();
+    if (!name) {
+      showToast('Enter the developer name.', true);
+      return;
+    }
+    const links = linksText.split(/\n/).map(line => line.trim()).filter(Boolean).map(line => {
+      const parts = line.split('|');
+      if (parts.length >= 2) {
+        return { title: parts[0].trim(), url: parts.slice(1).join('|').trim() };
+      }
+      const url = parts[0].trim();
+      return { title: url, url };
+    }).filter(link => link.url);
+    try {
+      let photo = state.developerCredit?.photo || '';
+      if (file instanceof File && file.size) {
+        validateImage(file);
+        const path = `${state.currentSchoolId || 'developer'}/developer/credit-photo.${imageExtension(file)}`;
+        if (photo && !photo.startsWith('data:')) {
+          // remove old stored path? keep simple
+        }
+        photo = `${supabaseUrl}/storage/v1/object/public/school-media/${path.split('/').map(encodeURIComponent).join('/')}`;
+        await uploadImage(path, file);
+      }
+      const credit = { name, bio, photo, links };
+      state.developerCredit = credit;
+      localStorage.setItem('developerCredit', JSON.stringify(credit));
+      goToView('credit');
+      showToast('Credit page saved.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save credit page.', true);
+    }
+  };
+
   const saveAttendance = async () => {
     if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) {
       throw new Error('Your account is not allowed to record attendance.');
@@ -2329,6 +2369,7 @@
     pageContent.addEventListener('submit', event => {
       if (event.target.id === 'createAccountForm') createAccount(event);
       if (event.target.id === 'schoolSettingsForm') saveSchoolSettings(event);
+      if (event.target.id === 'developerCreditForm') saveDeveloperCredit(event);
     });
     $('#recordForm').addEventListener('change', handlePageChange);
     $('#recordForm').addEventListener('submit', saveDialog);
