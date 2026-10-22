@@ -52,7 +52,7 @@
     data: Object.fromEntries([
       'schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects',
       'subject_enrollments', 'attendance', 'subject_attendance', 'assessments',
-      'marks', 'parent_students'
+      'marks', 'parent_students', 'homework_diaries', 'homework_receipts'
     ].map(table => [table, []]))
   };
 
@@ -90,7 +90,8 @@
     reportcards: 'Report cards',
     accounts: 'User accounts',
     school: 'School settings',
-    credit: 'Developer credit'
+    credit: 'Developer credit',
+    homework: 'Homework diary'
   };
 
   const roleNames = {
@@ -162,7 +163,7 @@
       state.currentSchoolId = schools.find(school => school.id === state.profile.school_id)?.id || schools[0]?.id || '';
     }
     if (!state.currentSchoolId) throw new Error('No school is available for this account. Ask the developer to configure a school.');
-    const tableNames = ['students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students'];
+    const tableNames = ['students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students', 'homework_diaries', 'homework_receipts'];
     const schoolFilter = `school_id=eq.${encodeURIComponent(state.currentSchoolId)}&select=*`;
     const loaded = await Promise.all(tableNames.map(async table => [table, await api(`${table}?${schoolFilter}`)]));
     loaded.forEach(([table, rows]) => { state.data[table] = rows; });
