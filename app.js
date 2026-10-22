@@ -411,8 +411,8 @@
       : profile.role === 'admin'
         ? Object.keys(labels).filter(view => view !== 'accounts')
         : profile.role === 'teacher'
-          ? ['overview', 'students', 'academics', 'attendance', 'assessments', 'reports', 'reportcards', 'credit']
-          : ['overview', 'attendance', 'assessments', 'reports', 'reportcards', 'credit'];
+          ? ['overview', 'students', 'academics', 'attendance', 'assessments', 'reports', 'reportcards', 'credit', 'homework']
+          : ['overview', 'attendance', 'assessments', 'reports', 'reportcards', 'credit', 'homework'];
     document.querySelectorAll('[data-view]').forEach(button => {
       const allowed = allowedViews.includes(button.dataset.view);
       button.classList.toggle('hidden', !allowed);
@@ -1331,6 +1331,81 @@
       </section>` : ''}`;
   };
 
+  const homeworkView = () => {
+    const role = state.profile?.role;
+    const canManage = ['developer', 'admin', 'teacher'].includes(role);
+    const childStudentIds = role === 'parent'
+      ? records('parent_students').filter(ps => ps.parent_profile_id === state.user?.id).map(ps => ps.student_id)
+      : [];
+    const childClasses = records('students').filter(s => childStudentIds.includes(s.id)).map(s => s.class_id);
+    const myStudent = role === 'student' ? records('students').find(s => s.id === state.profile?.student_id) : null;
+    const visibleDiaries = records('homework_diaries').slice()
+      .filter(d => {
+        if (canManage) return true;
+        if (role === 'student') return d.class_id === myStudent?.class_id;
+        if (role === 'parent') return childClasses.includes(d.class_id);
+        return false;
+      })
+      .sort((a, b) => String(b.homework_date || '').localeCompare(String(a.homework_date || '')));
+    const receiptSet = new Set(records('homework_receipts').map(r => `${r.homework_id}:${r.student_id}`));
+    const teacherOptions = optionList(records('teachers'), 'full_name', 'Choose teacher');
+    const defaultTeacher = state.profile?.teacher_id || records('teachers')[0]?.id || '';
+    const publicUrl = path => `${supabaseUrl}/storage/v1/object/public/school-media/${String(path || '').split('/').map(encodeURIComponent).join('/')}`;
+    const manageForm = canManage ? `<section class="panel">
+      <header class="panel-header"><div><h2>Create homework diary</h2><p>Add homework details.</p></div></header>
+      <form id="homeworkDiaryForm" class="panel-body dialog-fields">
+        ${field('homework_class_id', 'Class', 'select', '', optionList(records('classes'), 'name', 'Choose class'), true, true)}
+        ${field('homework_subject_id', 'Subject', 'select', '', optionList(records('subjects'), 'name', 'Choose subject'), true, true)}
+        ${field('homework_teacher_id', 'Teacher', 'select', defaultTeacher, teacherOptions, true, true)}
+        ${field('homework_date', 'Date', 'date', todayISO(), null, true, true)}
+        ${field('homework_topic', 'Topic', 'text', '', null, true, true)}
+        ${field('homework_content', 'Homework text (Urdu / English)', 'textarea', '', null, false, true)}
+        <div class="full-field" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="button button-outline button-small" data-homework-voice="ur-PK">Dictate (Urdu)</button>
+          <button type="button" class="button button-outline button-small" data-homework-voice="en-US">Dictate (English)</button>
+          <button type="button" class="button button-outline button-small" id="homeworkRecordBtn">Record audio</button>
+          <span id="homeworkRecordStatus" class="field-hint"></span>
+        </div>
+        <label class="field-label full-field">Images<input class="field-input" type="file" name="homework_images" accept="image/jpeg,image/png,image/webp" multiple></label>
+        <label class="field-label full-field">Audio file<input class="field-input" type="file" name="homework_audio" accept="audio/*"></label>
+        <div class="full-field"><button class="button button-primary" type="submit">Save homework diary</button></div>
+      </form>
+    </section>` : '';
+    const entries = visibleDiaries.length ? visibleDiaries.map(diary => {
+      const images = (diary.image_paths || []).map(path => `<img class="image-preview" src="${escapeHtml(publicUrl(path))}" alt="Homework image" style="max-width:180px;border-radius:12px;margin:6px;">`).join('');
+      const audio = diary.audio_path ? `<audio controls src="${escapeHtml(publicUrl(diary.audio_path))}" style="margin-top:8px;width:100%"></audio>` : '';
+      let receiptHtml = '';
+      if (role === 'parent') {
+        const relevantChildren = records('students').filter(s => childStudentIds.includes(s.id) && s.class_id === diary.class_id);
+        receiptHtml = relevantChildren.map(student => {
+          const done = receiptSet.has(`${diary.id}:${student.id}`);
+          return done
+            ? `<span class="status-pill">Received · ${escapeHtml(student.full_name)}</span>`
+            : `<button class="button button-outline button-small" data-action="confirm-homework" data-homework-id="${escapeHtml(diary.id)}" data-student-id="${escapeHtml(student.id)}">Mark received · ${escapeHtml(student.full_name)}</button>`;
+        }).join(' ');
+      } else if (canManage) {
+        const count = records('homework_receipts').filter(r => r.homework_id === diary.id).length;
+        const classStudents = records('students').filter(s => s.class_id === diary.class_id);
+        receiptHtml = `<small>${count} of ${classStudents.length} parents confirmed receipt</small>`;
+      }
+      return `<article class="panel" style="margin-bottom:14px">
+        <header class="panel-header"><div><h3>${escapeHtml(diary.topic || 'Homework')}</h3><p>${escapeHtml(subjectName(diary.subject_id))} · ${escapeHtml(className(diary.class_id))} · ${escapeHtml(teacherName(diary.teacher_id))} · ${escapeHtml(diary.homework_date || '')}</p></div></header>
+        <div class="panel-body">
+          <p style="white-space:pre-wrap;margin:0 0 10px">${escapeHtml(diary.content || '')}</p>
+          ${images ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${images}</div>` : ''}
+          ${audio}
+          ${receiptHtml ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${receiptHtml}</div>` : ''}
+        </div>
+      </article>`;
+    }).join('') : '<div class="empty-state">No homework diary entries yet.</div>';
+    return `${pageHeading('HOMEWORK DIARY', 'Homework diary', 'Homework entries.', '')}
+      ${manageForm}
+      <section class="panel">
+        <header class="panel-header"><div><h2>Entries</h2><p>${visibleDiaries.length} item${visibleDiaries.length === 1 ? '' : 's'}</p></div></header>
+        <div class="panel-body">${entries}</div>
+      </section>`;
+  };
+
   const accountsView = () => {
     const accountRows = state.accounts.map(account => `<tr><td>${escapeHtml(account.display_name)}</td><td>${escapeHtml(account.mobile || account.phone || 'Mobile unavailable')}</td><td>${escapeHtml(roleNames[account.role] || account.role)}</td><td>${escapeHtml(records('schools').find(school => school.id === account.school_id)?.name || 'School')}</td><td><button class="text-button danger-text" data-action="delete-account" data-id="${escapeHtml(account.id)}">Remove login</button></td></tr>`).join('');
     return `${pageHeading('ACCESS CONTROL', 'User accounts', 'Self-registered and managed accounts. Visible to the developer only.', '')}
@@ -1400,7 +1475,8 @@
       reportcards: reportCardsView,
       accounts: accountsView,
       school: schoolSettingsView,
-      credit: creditView
+      credit: creditView,
+      homework: homeworkView
     };
     pageContent.innerHTML = views[view]();
     $('#navStudentCount').textContent = state.data.students.length;
