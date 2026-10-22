@@ -1740,7 +1740,7 @@ const remindersView = () => {
     state.view = view;
     $('#breadcrumbTitle').textContent = labels[view];
     document.querySelectorAll('.nav-item').forEach(button => button.classList.toggle('selected', button.dataset.view === view));
-    const views = {
+  const views = {
       overview: overviewView,
       students: () => directoryView('students', 'Student directory', 'Every learner, organized in one place.', 'Add student'),
       teachers: () => directoryView('teachers', 'Teaching staff', 'Faculty profiles and school contact information.', 'Add teacher'),
@@ -1752,11 +1752,22 @@ const remindersView = () => {
       accounts: accountsView,
       school: schoolSettingsView,
       credit: creditView,
-      homework: homeworkView,
-       session: sessionView,
-       reminders: remindersView
+      homework: homeworkView
     };
-    pageContent.innerHTML = views[view]();
+    if (typeof sessionView === 'function') views.session = sessionView;
+    if (typeof remindersView === 'function') views.reminders = remindersView;
+    const renderView = views[view];
+    if (typeof renderView !== 'function') {
+      pageContent.innerHTML = '<div class="empty-state"><strong>This section is unavailable</strong>The requested workspace view could not be loaded.</div>';
+      return;
+    }
+    try {
+      pageContent.innerHTML = renderView();
+    } catch (error) {
+      console.error('View render error:', error);
+      pageContent.innerHTML = `<div class="empty-state"><strong>Could not load this section</strong>${escapeHtml(error instanceof Error ? error.message : 'Unexpected error while rendering the page.')}</div>`;
+      showToast(error instanceof Error ? error.message : 'Could not load this section.', true);
+    }
     $('#navStudentCount').textContent = state.data.students.length;
     if (view === 'accounts') loadAccounts();
   };
