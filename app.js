@@ -36,6 +36,8 @@
     assessmentEnrollOpen: false,
     attendanceDate: todayISO(),
     attendanceClass: '',
+    absenteeDate: todayISO(),
+    studentDirectoryClass: '',
     attendanceAssignmentId: '',
     attendanceRangeMode: false,
     attendanceRangeStart: todayISO(),
