@@ -151,30 +151,11 @@
       ...records('teachers').map(row => row.photo_path)
     ].filter(Boolean);
     const uniquePaths = [...new Set(paths)];
-    const results = await Promise.all(uniquePaths.map(async path => {
+    const results = uniquePaths.map(path => {
       const objectPath = path.split('/').map(encodeURIComponent).join('/');
-      // Prefer the public URL (works when the bucket is public); fall back to a
-      // signed URL for private buckets.
       const publicUrl = `${supabaseUrl}/storage/v1/object/public/school-media/${objectPath}`;
-      try {
-        const probe = await fetch(publicUrl, { method: 'HEAD' });
-        if (probe.ok) return [path, publicUrl];
-      } catch (error) {
-        // Fall through to signed URL attempt
-      }
-      try {
-        const response = await fetch(`${supabaseUrl}/storage/v1/object/sign/school-media/${objectPath}`, {
-          method: 'POST',
-          headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expiresIn: 3600 })
-        });
-        if (!response.ok) throw new Error(`Could not load an uploaded image (${response.status}).`);
-        const result = await response.json();
-        return [path, result.signedURL.startsWith('http') ? result.signedURL : `${supabaseUrl}${result.signedURL}`];
-      } catch (error) {
-        return [path, publicUrl];
-      }
-    }));
+      return [path, publicUrl];
+    });
     state.imageUrls = Object.fromEntries(results.filter(Boolean));
   };
 
