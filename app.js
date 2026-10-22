@@ -166,12 +166,13 @@
 
   const uploadImage = async (path, file) => {
     const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    const contentType = file.type || 'image/jpeg';
     const response = await fetch(`${supabaseUrl}/storage/v1/object/school-media/${objectPath}`, {
       method: 'POST',
       headers: {
         apikey: supabaseAnonKey,
         Authorization: `Bearer ${state.token}`,
-        'Content-Type': file.type,
+        'Content-Type': contentType,
         'x-upsert': 'true'
       },
       body: file
@@ -1835,17 +1836,13 @@
   };
 
   const saveDialog = async event => {
-    console.log('saveDialog called', event?.submitter?.value);
     if (event.submitter && event.submitter.value !== 'save') return;
     event.preventDefault();
     const dialog = $('#recordDialog');
     const table = dialog.dataset.table;
     const id = dialog.dataset.id;
-    console.log('table:', table, 'id:', id);
     const values = Object.fromEntries(new FormData($('#recordForm')).entries());
-    console.log('values:', values);
     const file = values.photo_file;
-    console.log('file:', file, 'isFile:', file instanceof File, 'size:', file?.size);
     const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => formDefinitions[table]?.fields && key !== 'photo_file' && !(value instanceof File)));
     if (table === 'students' && !payload.gender) payload.gender = null;
     if (table === 'teachers') {
