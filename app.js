@@ -95,7 +95,7 @@
     credit: 'Developer credit',
     homework: 'Homework diary',
     session: 'Session & promotion',
-    branding: 'Branding & labels'
+    branding: 'Branding & labels',
     reminders: 'Teacher reminders'
   };
 
