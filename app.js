@@ -110,6 +110,55 @@
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   })[char]);
+  const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const applyLabelOverrides = (root) => {
+    try {
+      const branding = window.SEEDS_BRANDING;
+      if (!branding) return;
+      const overrides = branding.get().labels || {};
+      const entries = Object.keys(overrides)
+        .filter(k => typeof overrides[k] === 'string' && overrides[k].trim() !== '')
+        .sort((a, b) => b.length - a.length);
+      if (!entries.length) return;
+      const target = root || document;
+      // text nodes
+      const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null);
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(node => {
+        let text = node.nodeValue;
+        let changed = false;
+        entries.forEach(def => {
+          const custom = overrides[def];
+          if (text.indexOf(def) !== -1) {
+            text = text.split(def).join(custom);
+            changed = true;
+          }
+        });
+        if (changed) node.nodeValue = text;
+      });
+      // placeholders
+      target.querySelectorAll && target.querySelectorAll('[placeholder]').forEach(el => {
+        let ph = el.getAttribute('placeholder');
+        let changed = false;
+        entries.forEach(def => {
+          if (ph && ph.indexOf(def) !== -1) { ph = ph.split(def).join(overrides[def]); changed = true; }
+        });
+        if (changed) el.setAttribute('placeholder', ph);
+      });
+      // aria-label
+      target.querySelectorAll && target.querySelectorAll('[aria-label]').forEach(el => {
+        let al = el.getAttribute('aria-label');
+        let changed = false;
+        entries.forEach(def => {
+          if (al && al.indexOf(def) !== -1) { al = al.split(def).join(overrides[def]); changed = true; }
+        });
+        if (changed) el.setAttribute('aria-label', al);
+      });
+    } catch (e) { /* ignore */ }
+  };
+  const applyBrandingFonts = () => { if (window.SEEDS_BRANDING) window.SEEDS_BRANDING.applyFonts(); };
+
 
   const showToast = (message, isError = false) => {
     window.clearTimeout(toastTimer);
