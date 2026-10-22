@@ -1291,10 +1291,9 @@
       <div class="callout"><strong>Mobile number sign-in</strong> · Users sign in with their Pakistani mobile number.</div>
       <section class="panel"><header class="panel-header"><div><h2>Create teacher or parent account</h2><p>Credentials are created by the protected Supabase function, never in this browser database.</p></div></header>
         <form id="createAccountForm" class="panel-body dialog-fields">
-          ${field('role', 'Account type', 'select', 'teacher', [{ value: 'teacher', label: 'Teacher' }, { value: 'parent', label: 'Parent / guardian' }], true)}
+          ${field('role', 'Account type', 'select', 'teacher', [{ value: 'developer', label: 'Developer' }, { value: 'admin', label: 'Administrator' }, { value: 'teacher', label: 'Teacher' }, { value: 'parent', label: 'Parent / guardian' }, { value: 'student', label: 'Student' }], true)}
           ${field('display_name', 'Full name', 'text', '', null, true)}
-          ${field('email', 'Email address', 'email', '', null, true)}
-          ${field('password', 'Temporary password (12+ characters)', 'password', '', null, true)}
+          ${field('mobile', 'Pakistani mobile number', 'text', '', null, true)}
           ${field('teacher_id', 'Teacher profile', 'select', '', optionList(records('teachers'), 'full_name', 'Choose teacher'))}
           <label class="field-label">Parent's linked students<select class="field-select" name="student_ids" multiple size="5">${records('students').map(student => `<option value="${escapeHtml(student.id)}">${escapeHtml(student.full_name)} · ${escapeHtml(className(student.class_id))}</option>`).join('')}</select><small>For parent accounts, select one or more children. Hold Ctrl to select multiple.</small></label>
           <div class="full-field"><button class="button button-primary" type="submit">Create account</button></div>
@@ -1852,26 +1851,25 @@
     const form = event.target;
     const values = new FormData(form);
     const role = String(values.get('role') || '');
-    const password = String(values.get('password') || '');
-    if (password.length < 12) {
-      showToast('Choose a temporary password with at least 12 characters.', true);
+    const mobile = normalizeMobile(String(values.get('mobile') || ''));
+    if (!isValidPakistaniMobile(mobile)) {
+      showToast('Enter a valid Pakistani mobile number.', true);
       return;
     }
     const studentSelect = form.elements.namedItem('student_ids');
-    const studentIds = [...studentSelect.selectedOptions].map(option => option.value);
+    const studentIds = studentSelect ? [...studentSelect.selectedOptions].map(option => option.value) : [];
     try {
       await manageAccounts({
         action: 'create',
         role,
         school_id: state.currentSchoolId,
         display_name: String(values.get('display_name') || '').trim(),
-        email: String(values.get('email') || '').trim(),
-        password,
+        mobile,
         teacher_id: String(values.get('teacher_id') || '') || null,
         student_ids: studentIds
       });
       form.reset();
-      showToast('Account created. Share the temporary password privately.');
+      showToast('Account created. User signs in with their mobile number.');
       await loadAccounts();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not create the account.', true);
@@ -2302,6 +2300,7 @@
         catch (error) { showToast(error instanceof Error ? error.message : 'Could not save attendance.', true); }
       }
       if (event.target.closest('#saveMarks')) {
+        if (!window.confirm('Confirm and verify all entered marks before saving?')) return;
         try { await saveMarks(); }
         catch (error) { showToast(error instanceof Error ? error.message : 'Could not save marks.', true); }
       }

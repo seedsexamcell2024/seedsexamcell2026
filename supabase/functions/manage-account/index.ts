@@ -48,8 +48,7 @@ Deno.serve(async (request: Request) => {
     if (input.action === 'list') {
       const { data: profiles, error } = await admin
         .from('profiles')
-        .select('id, school_id, role, display_name, teacher_id')
-        .in('role', ['teacher', 'parent'])
+        .select('id, school_id, role, display_name, teacher_id, student_id')
         .order('display_name');
       if (error) throw error;
 
@@ -57,23 +56,25 @@ Deno.serve(async (request: Request) => {
       for (let page = 1; ; page += 1) {
         const { data, error: usersError } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
         if (usersError) throw usersError;
-        for (const user of data.users) usersById.set(user.id, user.email || '');
+        for (const user of data.users) usersById.set(user.id, (user.email || '').replace(/@seeds\.local$/i, ''));
         if (data.users.length < 1000) break;
       }
       return json({
-        accounts: (profiles || []).map(profile => ({ ...profile, email: usersById.get(profile.id) || '' })),
+        accounts: (profiles || []).map(profile => ({ ...profile, mobile: usersById.get(profile.id) || '' })),
       });
     }
 
     if (input.action === 'create') {
       const role = input.role;
       const displayName = String(input.display_name || '').trim();
-      const email = String(input.email || '').trim().toLowerCase();
-      const password = String(input.password || '');
+      let mobile = String(input.mobile || '').replace(/\D/g, '');
+      if (mobile.startsWith('0')) mobile = '92' + mobile.slice(1);
+      if (mobile.length === 10 && mobile.startsWith('3')) mobile = '92' + mobile;
+      if (mobile.length === 11 && mobile.startsWith('3')) mobile = '92' + mobile;
       const schoolId = String(input.school_id || '');
-      if (!['teacher', 'parent'].includes(role)) return json({ error: 'Only teacher and parent accounts can be created here.' }, 400);
-      if (!displayName || !email || !email.includes('@')) return json({ error: 'Enter a name and valid email address.' }, 400);
-      if (password.length < 12) return json({ error: 'Temporary passwords must contain at least 12 characters.' }, 400);
+      if (!['developer', 'admin', 'teacher', 'parent', 'student'].includes(role)) return json({ error: 'Choose a valid account type.' }, 400);
+      if (!displayName) return json({ error: 'Enter a full name.' }, 400);
+      if (!/^923[0-9]{9}$/.test(mobile)) return json({ error: 'Enter a valid Pakistani mobile number.' }, 400);
       if (!schoolId) return json({ error: 'Choose a school for this account.' }, 400);
 
       const { data: school, error: schoolError } = await admin.from('schools').select('id').eq('id', schoolId).maybeSingle();
@@ -104,11 +105,12 @@ Deno.serve(async (request: Request) => {
         if (!students || students.length !== studentIds.length) return json({ error: 'All selected students must belong to the chosen school.' }, 400);
       }
 
+      const email = `${mobile}@seeds.local`;
       const { data: created, error: createError } = await admin.auth.admin.createUser({
         email,
-        password,
+        password: mobile,
         email_confirm: true,
-        user_metadata: { display_name: displayName },
+        user_metadata: { display_name: displayName, mobile },
       });
       if (createError) throw createError;
       if (!created.user) throw new Error('Supabase did not return the new account.');
@@ -169,7 +171,7 @@ Deno.serve(async (request: Request) => {
         .eq('id', userId)
         .maybeSingle();
       if (targetError) throw targetError;
-      if (!target || !['teacher', 'parent'].includes(target.role)) return json({ error: 'Only teacher and parent sign-ins can be removed here.' }, 404);
+      if (!target) return json({ error: 'Account not found.' }, 404);
       const { error } = await admin.auth.admin.deleteUser(userId);
       if (error) throw error;
       return json({ deleted: true });
