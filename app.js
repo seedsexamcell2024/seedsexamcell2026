@@ -2003,7 +2003,6 @@
     } catch (error) {
       console.error('saveDialog error:', error);
       const msg = error instanceof Error ? error.message : 'Could not save the record.';
-      alert('SAVE ERROR: ' + msg);
       showToast(msg, true);
     }
   };
