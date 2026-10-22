@@ -2209,6 +2209,9 @@
     });
     $('#recordForm').addEventListener('change', handlePageChange);
     $('#recordForm').addEventListener('submit', saveDialog);
+    $('#saveRecordButton').addEventListener('click', () => {
+      saveDialog({ preventDefault() {} });
+    });
     $('#recordDialog').addEventListener('click', event => {
       if (event.target === $('#recordDialog')) $('#recordDialog').close();
       if (event.target.closest('[value="cancel"]')) $('#recordDialog').close();
