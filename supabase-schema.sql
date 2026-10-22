@@ -155,8 +155,7 @@ create table if not exists public.school_holidays (
   description text,
   created_by uuid not null default auth.uid() references auth.users(id),
   created_at timestamptz not null default now(),
-  unique (school_id, holiday_date),
-  foreign key (school_id, school_id) references public.schools(id, id)
+  unique (school_id, holiday_date)
 );
 
 alter table public.school_holidays enable row level security;

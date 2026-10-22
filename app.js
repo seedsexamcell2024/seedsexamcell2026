@@ -305,7 +305,7 @@
       state.currentSchoolId = schools.find(school => school.id === state.profile.school_id)?.id || schools[0]?.id || '';
     }
     if (!state.currentSchoolId) throw new Error('No school is available for this account. Ask the developer to configure a school.');
-    const tableNames = ['students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students', 'homework_diaries', 'homework_receipts', 'absentee_records'];
+    const tableNames = ['schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'school_holidays', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students', 'homework_diaries', 'homework_receipts', 'absentee_records'];
     const schoolFilter = `school_id=eq.${encodeURIComponent(state.currentSchoolId)}&select=*`;
     const loaded = await Promise.all(tableNames.map(async table => [table, await api(`${table}?${schoolFilter}`)]));
     loaded.forEach(([table, rows]) => { state.data[table] = rows; });
@@ -504,6 +504,12 @@
     (!state.attendanceClass || row.class_id === state.attendanceClass) &&
     (isManager() || row.teacher_id === state.profile?.teacher_id));
   const activeStudents = () => records('students').filter(student => student.status === 'Active');
+  const schoolHolidays = () => records('school_holidays').filter(row => row.school_id === state.currentSchoolId);
+  const isHoliday = dateISO => schoolHolidays().some(row => row.holiday_date === dateISO);
+  const holidayTitle = dateISO => {
+    const h = schoolHolidays().find(row => row.holiday_date === dateISO);
+    return h ? h.title : '';
+  };
 
   const classStrengthView = () => {
     const permitted = isManager() ? null : new Set(permittedStudents());
