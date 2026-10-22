@@ -62,6 +62,7 @@ create table if not exists public.students (
   guardian_phone text,
   photo_path text,
   roll_number text,
+  extra_fields jsonb not null default '{}'::jsonb,
   status text not null default 'Active' check (status in ('Active', 'Inactive')),
   created_at timestamptz not null default now(),
   unique (school_id, student_id),
@@ -84,6 +85,8 @@ create table if not exists public.profiles (
 alter table public.schools add column if not exists logo_path text;
 alter table public.teachers add column if not exists photo_path text;
 alter table public.students add column if not exists photo_path text;
+alter table public.teachers add column if not exists extra_fields jsonb not null default '{}'::jsonb;
+alter table public.students add column if not exists extra_fields jsonb not null default '{}'::jsonb;
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check
   check (role in ('developer', 'admin', 'teacher', 'student', 'parent'));
