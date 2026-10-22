@@ -304,7 +304,7 @@ button { cursor: pointer; }
 .attendance-range-panel .field-input { width: 145px; }
 .attendance-range-panel strong { color: var(--green); }
 .attendance-list-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 17px; background: #f0f4f0; color: #58665c; font-size: 10px; font-weight: 700; }
-.attendance-student-row { display: grid; grid-template-columns: 32px minmax(180px, 1fr) auto; align-items: center; gap: 12px; padding: 12px 17px; border-top: 1px solid #edf0ed; }
+.attendance-student-row { display: grid; grid-template-columns: 32px 42px minmax(180px, 1fr) auto; align-items: center; gap: 12px; padding: 12px 17px; border-top: 1px solid #edf0ed; }
 .attendance-row-number { color: #a0aaa2; font-size: 10px; }
 .attendance-student-info { min-width: 0; }
 .attendance-student-info > strong { display: block; overflow: hidden; color: #344239; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -535,8 +535,8 @@ button { cursor: pointer; }
   .ledger-control, .attendance-save-bar { align-items: flex-start; flex-direction: column; }
   .ledger-actions { width: 100%; flex-wrap: wrap; }
   .range-mode-toggle { margin-left: auto; }
-  .attendance-student-row { grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 11px; }
-  .attendance-status-choices { grid-column: 2; justify-content: flex-start; }
+  .attendance-student-row { grid-template-columns: 22px 32px minmax(0, 1fr); gap: 8px; padding: 11px; }
+  .attendance-status-choices { grid-column: 2 / -1; justify-content: flex-start; }
   .attendance-choice { min-width: 48px; }
   .attendance-choice { min-height: 44px; }
   .ledger-action { width: 40px; height: 40px; }
@@ -1066,4 +1066,25 @@ button { cursor: pointer; }
 .report-card-remarks textarea.report-card-remarks-input { width: 100%; border: 0; resize: none; background: transparent; font-style: italic; color: #3c4a41; font-size: 11.5px; padding: 10px 12px; box-sizing: border-box; }
 .report-card-sheet--monthly .report-card-remarks textarea.report-card-remarks-input { font-size: 11.5px; padding: 8px 10px; }
 .report-card-sheet--term .report-card-remarks textarea.report-card-remarks-input { font-size: 9px; padding: 8px 10px; color: #1a1a1a; }
+
+.attendance-student-photo { width: 42px; height: 42px; border-radius: 50%; overflow: hidden; flex: 0 0 42px; display: grid; place-items: center; background: #e8efe9; }
+.attendance-student-photo .person-photo { width: 100%; height: 100%; object-fit: cover; }
+.attendance-student-photo .table-avatar { width: 100%; height: 100%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #10251e; }
+.attendance-student-info { min-width: 0; }
+.monthly-student-cell { display: flex; align-items: center; gap: 8px; }
+.monthly-student-photo { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; flex: 0 0 30px; display: grid; place-items: center; background: #e8efe9; }
+.monthly-student-photo .person-photo { width: 100%; height: 100%; object-fit: cover; }
+.monthly-student-photo .table-avatar { width: 100%; height: 100%; display: grid; place-items: center; font-size: 10px; font-weight: 800; color: #10251e; }
+.monthly-student-name { display: flex; flex-direction: column; min-width: 0; }
+.attendance-calendar-panel { margin: 16px 0; padding: 14px; border: 1px solid #d7e1da; border-radius: 14px; background: #f7faf8; }
+.attendance-calendar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.attendance-calendar-header strong { font-size: 15px; color: #10251e; }
+.attendance-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.attendance-calendar-weekday { text-align: center; font-size: 11px; font-weight: 800; color: #5f7168; padding: 4px 0; }
+.attendance-calendar-blank { min-height: 34px; }
+.attendance-calendar-day { min-height: 34px; border: 1px solid #d7e1da; border-radius: 8px; background: #fff; color: #10251e; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }
+.attendance-calendar-day:hover { background: #e8efe9; border-color: #1f6b52; }
+.attendance-calendar-day.selected { background: #1f6b52; color: #fff; border-color: #1f6b52; }
+.attendance-calendar-day.weekend { color: #9b5b1f; }
+.attendance-calendar-day.selected.weekend { color: #fff; }
 

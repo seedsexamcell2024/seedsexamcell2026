@@ -603,8 +603,8 @@
   const studentsTable = (rows, controls = true) => {
     if (!rows.length) return `<div class="empty-state"><strong>No student records yet</strong>Add students to start tracking classes, attendance, and results.</div>`;
     const canManage = isManager();
-    return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Student ID</th><th>Roll No.</th><th>Class</th><th>Guardian</th><th>Status</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>
-      ${rows.map(row => `<tr><td><div class="person-cell">${photo(row, row.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}<span><strong>${escapeHtml(row.full_name)}</strong><small>${escapeHtml(row.gender || 'Student')}</small></span></div></td><td>${escapeHtml(row.student_id || 'Assigned on save')}</td><td>${escapeHtml(studentRollNumber(row))}</td><td>${escapeHtml(className(row.class_id))}</td><td>${escapeHtml(row.guardian_name || '—')}</td><td><span class="status-pill">${escapeHtml(row.status || 'Active')}</span></td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="students" data-id="${escapeHtml(row.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="students" data-id="${escapeHtml(row.id)}">Remove</button></td>` : ''}</tr>`).join('')}
+    return `<div class="table-wrap"><table class="data-table"><thead><tr><th>Sr. No.</th><th>Student</th><th>Student ID</th><th>Roll No.</th><th>Class</th><th>Guardian</th><th>Status</th>${canManage ? '<th></th>' : ''}</tr></thead><tbody>
+      ${rows.map((row, index) => `<tr><td>${index + 1}</td><td><div class="person-cell">${photo(row, row.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}<span><strong>${escapeHtml(row.full_name)}</strong><small>${escapeHtml(row.gender || 'Student')}</small></span></div></td><td>${escapeHtml(row.student_id || 'Assigned on save')}</td><td>${escapeHtml(studentRollNumber(row))}</td><td>${escapeHtml(className(row.class_id))}</td><td>${escapeHtml(row.guardian_name || '—')}</td><td><span class="status-pill">${escapeHtml(row.status || 'Active')}</span></td>${canManage ? `<td><button class="text-button" data-action="edit" data-table="students" data-id="${escapeHtml(row.id)}">Edit</button> <button class="text-button danger-text" data-action="delete" data-table="students" data-id="${escapeHtml(row.id)}">Remove</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>`;
   };
 
@@ -701,6 +701,15 @@
     const canTakeAttendance = isManager() || (state.profile.role === 'teacher' && assignment?.teacher_id === state.profile.teacher_id);
     const dateValue = new Date(`${state.attendanceDate}T12:00:00`);
     const weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }).format(dateValue);
+    const calendarBaseDate = Number.isNaN(dateValue.getTime()) ? new Date() : dateValue;
+    const calendarYear = calendarBaseDate.getFullYear();
+    const calendarMonth = calendarBaseDate.getMonth();
+    const calendarMonthLabel = new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(calendarBaseDate);
+    const calendarDays = Array.from({ length: new Date(calendarYear, calendarMonth + 1, 0).getDate() }, (_, index) => {
+      const dayDate = new Date(calendarYear, calendarMonth, index + 1);
+      return { number: index + 1, iso: localDateISO(dayDate), weekend: dayDate.getDay() === 0 || dayDate.getDay() === 6 };
+    });
+    const calendarLeadingBlanks = new Date(calendarYear, calendarMonth, 1).getDay();
     const rangeLength = state.attendanceRangeMode && state.attendanceRangeStart && state.attendanceRangeEnd
       ? Math.round((new Date(`${state.attendanceRangeEnd}T12:00:00`) - new Date(`${state.attendanceRangeStart}T12:00:00`)) / 86400000) + 1
       : 1;
@@ -741,6 +750,18 @@
         ${state.attendanceRangeMode ? `<div class="attendance-range-panel"><span>Apply marked statuses to each date in the selected range</span><label>From <input id="attendanceRangeStart" class="field-input" type="date" value="${escapeHtml(state.attendanceRangeStart)}"></label><label>To <input id="attendanceRangeEnd" class="field-input" type="date" value="${escapeHtml(state.attendanceRangeEnd)}"></label><strong>${rangeLength > 0 ? `${rangeLength} day${rangeLength === 1 ? '' : 's'}` : 'Choose a valid date range'}</strong></div>` : ''}` : ''}
         ${state.profile.role === 'teacher' && !assignment ? '<p class="subject-register-notice">Choose one of your assigned subject registers before entering attendance. Each subject is saved separately.</p>' : ''}
       </div>
+      <div class="attendance-calendar-panel">
+        <div class="attendance-calendar-header">
+          <button type="button" class="date-step" data-calendar-month="-1" aria-label="Previous month">‹</button>
+          <strong>${escapeHtml(calendarMonthLabel)}</strong>
+          <button type="button" class="date-step" data-calendar-month="1" aria-label="Next month">›</button>
+        </div>
+        <div class="attendance-calendar-grid">
+          ${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(day => `<span class="attendance-calendar-weekday">${day}</span>`).join('')}
+          ${Array.from({ length: calendarLeadingBlanks }, () => '<span class="attendance-calendar-blank"></span>').join('')}
+          ${calendarDays.map(day => `<button type="button" class="attendance-calendar-day ${day.iso === state.attendanceDate ? 'selected' : ''} ${day.weekend ? 'weekend' : ''}" data-attendance-date="${escapeHtml(day.iso)}">${day.number}</button>`).join('')}
+        </div>
+      </div>
       <div class="attendance-list">
         <div class="attendance-list-header"><span>${assignment ? `${escapeHtml(subjectName(assignment.subject_id))} · ${escapeHtml(className(assignment.class_id))} students` : 'Class students · Daily marking mode'}</span><span>Status</span></div>
         ${rows.length ? rows.map((student, index) => {
@@ -749,6 +770,7 @@
           const selectedStatus = statusOptions.find(option => option.value === status) || statusOptions[0];
           return `<article class="attendance-student-row ${canTakeAttendance ? 'editable' : ''}" data-row-student="${escapeHtml(student.id)}">
             <span class="attendance-row-number">#${index + 1}</span>
+            <div class="attendance-student-photo">${photo(student, student.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}</div>
             <div class="attendance-student-info"><strong>${escapeHtml(student.full_name)}</strong><div class="attendance-student-meta"><span class="attendance-id">ID: ${escapeHtml(student.student_id || 'Not assigned')}</span><span class="attendance-gender">${escapeHtml((student.gender || '—').slice(0, 1))}</span><span>Roll: ${escapeHtml(student.roll_number || String(index + 1).padStart(2, '0'))}</span><span class="attendance-status-label status-${status}">${escapeHtml(selectedStatus.label)}</span></div></div>
             <div class="attendance-status-choices">${statusOptions.map(option => `<button type="button" class="attendance-choice status-${option.value} ${status === option.value ? 'selected' : ''}" data-student-status="${escapeHtml(option.value)}" data-student="${escapeHtml(student.id)}" aria-pressed="${status === option.value}" aria-label="${escapeHtml(option.label)} for ${escapeHtml(student.full_name)}" ${canTakeAttendance ? '' : 'disabled'}><strong>${option.short}</strong><small>${escapeHtml(option.label)}</small></button>`).join('')}</div>
           </article>`;
@@ -851,7 +873,7 @@
               const code = statusCodes[status] || (!status && day.weekend ? 'S' : '');
               return `<td class="monthly-status-cell ${status ? `status-${status}` : day.weekend ? 'status-weekend' : ''}" title="${status ? escapeHtml(status[0].toUpperCase() + status.slice(1)) : day.weekend ? 'Weekend' : 'No record'}">${code}</td>`;
             }).join('');
-            return `<tr><td class="monthly-student-cell"><strong>${escapeHtml(student.full_name)}</strong><small>ID: ${escapeHtml(student.student_id || 'Not assigned')}</small></td><td class="monthly-gender-cell">${escapeHtml((student.gender || '—').slice(0, 1))}</td>${dailyCells}<td>${totals.present + totals.absent + totals.leave}</td><td>${totals.holiday}</td><td>${totals.present}</td><td>${totals.leave}</td><td>${totals.absent}</td></tr>`;
+            return `<tr><td class="monthly-student-cell"><div class="monthly-student-photo">${photo(student, student.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}</div><div class="monthly-student-name"><strong>${escapeHtml(student.full_name)}</strong><small>ID: ${escapeHtml(student.student_id || 'Not assigned')}</small></div></td><td class="monthly-gender-cell">${escapeHtml((student.gender || '—').slice(0, 1))}</td>${dailyCells}<td>${totals.present + totals.absent + totals.leave}</td><td>${totals.holiday}</td><td>${totals.present}</td><td>${totals.leave}</td><td>${totals.absent}</td></tr>`;
           }).join('')}</tbody>
           <tfoot><tr><th colspan="2" class="daily-present-label">DAILY PRESENT</th>${countsByDay.map((count, index) => `<td class="${days[index].weekend ? 'weekend' : ''}">${count || ''}</td>`).join('')}<td colspan="5"></td></tr></tfoot>
         </table></div><p class="monthly-key"><strong>KEY:</strong> P Present · A Absent · L Leave · H Holiday · S Weekend · W Working entries</p>` : `<div class="empty-state"><strong>${validMonth ? 'No students in this class' : 'Choose a month'}</strong>${validMonth ? 'Add students and assign them to a class to print a register.' : 'Select a valid month to display the attendance sheet.'}</div>`}
@@ -1798,6 +1820,29 @@
       const date = new Date(`${state.attendanceDate}T12:00:00`);
       date.setDate(date.getDate() + Number(dateStep.dataset.dateStep));
       state.attendanceDate = localDateISO(date);
+      goToView('attendance');
+      return;
+    }
+    const attendanceDateButton = event.target.closest('[data-attendance-date]');
+    if (attendanceDateButton) {
+      state.attendanceDate = attendanceDateButton.dataset.attendanceDate;
+      state.attendanceRangeStart = state.attendanceDate;
+      state.attendanceRangeEnd = state.attendanceDate;
+      goToView('attendance');
+      return;
+    }
+    const calendarMonthButton = event.target.closest('[data-calendar-month]');
+    if (calendarMonthButton) {
+      const current = new Date(`${state.attendanceDate}T12:00:00`);
+      const targetMonthIndex = current.getMonth() + Number(calendarMonthButton.dataset.calendarMonth);
+      const targetYear = current.getFullYear() + Math.floor(targetMonthIndex / 12);
+      const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+      const maxDay = new Date(targetYear, normalizedMonth + 1, 0).getDate();
+      const day = Math.min(current.getDate() || 1, maxDay);
+      const next = new Date(targetYear, normalizedMonth, day, 12);
+      state.attendanceDate = localDateISO(next);
+      state.attendanceRangeStart = state.attendanceDate;
+      state.attendanceRangeEnd = state.attendanceDate;
       goToView('attendance');
       return;
     }
