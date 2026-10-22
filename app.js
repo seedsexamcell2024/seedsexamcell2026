@@ -1076,6 +1076,10 @@
           <tbody>${students.map(student => {
             const studentDays = attendanceByStudent.get(student.id) || new Map();
             const totals = { present: 0, absent: 0, leave: 0, holiday: 0 };
+            const attendanceMonthNum = state.attendanceMonth ? String(state.attendanceMonth.slice(5, 7)) : '';
+            const monthlyTotalsForStudent = student.monthlyTotals && student.monthlyTotals[attendanceMonthNum]
+              ? student.monthlyTotals[attendanceMonthNum]
+              : { P: 0, A: 0, L: 0, H: 0 };
             const dailyCells = days.map(day => {
               const status = studentDays.get(day.number);
               if (status in totals) totals[status]++;
