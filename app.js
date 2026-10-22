@@ -90,7 +90,10 @@
     toast.textContent = message;
     toast.classList.toggle('error', isError);
     toast.classList.add('show');
-    toastTimer = window.setTimeout(() => toast.classList.remove('show'), 3600);
+    if (isError) {
+      console.error('TOAST ERROR:', message);
+    }
+    toastTimer = window.setTimeout(() => toast.classList.remove('show'), isError ? 10000 : 3600);
   };
 
   const setLoginMessage = message => {
@@ -1941,7 +1944,9 @@
       showToast(`${formDefinitions[table].title} ${id ? 'updated' : 'added'}.`);
     } catch (error) {
       console.error('saveDialog error:', error);
-      showToast(error instanceof Error ? error.message : 'Could not save the record.', true);
+      const msg = error instanceof Error ? error.message : 'Could not save the record.';
+      alert('SAVE ERROR: ' + msg);
+      showToast(msg, true);
     }
   };
 
