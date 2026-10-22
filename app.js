@@ -2934,6 +2934,15 @@ const remindersView = () => {
         localDateISO(startDate) !== start || localDateISO(endDate) !== end || endDate < startDate) {
       throw new Error('Choose a valid start and end date. The end date must not be before the start date.');
     }
+    // Weekend restriction: Saturdays and Sundays are off; only Monday-Friday entries allowed.
+    for (let offset = 0; offset <= Math.round((endDate - startDate) / 86400000); offset++) {
+      const checkDate = new Date(startDate);
+      checkDate.setDate(checkDate.getDate() + offset);
+      const day = checkDate.getDay();
+      if (day === 0 || day === 6) {
+        throw new Error(`Attendance cannot be saved for ${checkDate.toDateString()} (${checkDate.toLocaleDateString('en', { weekday: 'long' })}). Weekends (Saturday and Sunday) are off; only Monday to Friday entries are allowed.`);
+      }
+    }
     const dayCount = Math.round((endDate - startDate) / 86400000) + 1;
     if (dayCount > 366) throw new Error('Attendance can be applied to at most 366 days at a time.');
     const maxRows = 10000;
@@ -2967,9 +2976,20 @@ const remindersView = () => {
         prefer: 'resolution=merge-duplicates,return=minimal'
       });
     }
+    // Verify the data was actually saved to the database.
     await refreshData();
+    const savedCount = (assignment ? records('subject_attendance') : records('attendance'))
+      .filter(row => {
+        const rowDate = row.attendance_date;
+        return rowDate >= start && rowDate <= end &&
+          (assignment ? row.subject_id === assignment.subject_id : true);
+      }).length;
+    const expectedCount = students.length * dayCount;
+    if (savedCount < expectedCount) {
+      throw new Error(`Attendance verification failed: expected ${expectedCount} records but found ${savedCount} in the database. Please try saving again.`);
+    }
     goToView('attendance');
-    showToast(`${assignment ? `${subjectName(assignment.subject_id)} subject` : 'Class'} attendance saved for ${students.length} students across ${dayCount} day${dayCount === 1 ? '' : 's'}.`);
+    showToast(`Attendance saved and verified in database: ${students.length} students × ${dayCount} day${dayCount === 1 ? '' : 's'} = ${expectedCount} records.`);
   };
 
   const saveMarks = async () => {
@@ -3198,6 +3218,22 @@ const remindersView = () => {
     $('#helpButton').addEventListener('click', () => showToast('Contact your school administrator for help.'));
     $('#notificationButton').addEventListener('click', () => showToast('You are all caught up.'));
     $('#profileButton').addEventListener('click', () => showToast(`${$('#profileName').textContent} · ${$('#profileRole').textContent}`));
+
+    // Keyboard shortcuts for bulk attendance status: P=Present, A=Absent, H=Holiday, L=Leave
+    window.addEventListener('keydown', event => {
+      if (state.view !== 'attendance') return;
+      if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) return;
+      const key = event.key.toLowerCase();
+      const statusMap = { p: 'present', a: 'absent', h: 'holiday', l: 'leave' };
+      const status = statusMap[key];
+      if (!status) return;
+      const canTake = isManager() || (state.profile.role === 'teacher' && attendanceAssignment()?.teacher_id === state.profile.teacher_id);
+      if (!canTake) return;
+      event.preventDefault();
+      for (const student of attendanceStudents()) state.attendanceStatuses[student.id] = status;
+      goToView('attendance');
+      showToast(`All students marked ${status.charAt(0).toUpperCase() + status.slice(1)}. Press P/A/H/L to change all.`);
+    });
   };
 
   initialize();
