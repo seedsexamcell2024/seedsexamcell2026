@@ -54,7 +54,7 @@
     data: Object.fromEntries([
       'schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects',
       'subject_enrollments', 'attendance', 'subject_attendance', 'assessments',
-      'marks', 'parent_students', 'homework_diaries', 'homework_receipts'
+      'marks', 'parent_students', 'homework_diaries', 'homework_receipts', 'absentee_records'
     ].map(table => [table, []]))
   };
 
@@ -157,6 +157,39 @@
     }
     return body ? JSON.parse(body) : null;
   };
+  const dateOffset = (iso, days) => {
+    const date = new Date(`${iso}T12:00:00`);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+
+  const syncAbsenteeRecords = async () => {
+    if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) return;
+    const reportDate = dateOffset(todayISO(), -1);
+    const existing = new Set((records('absentee_records') || []).filter(row => row.report_date === reportDate).map(row => row.student_id));
+    const rows = (records('attendance') || [])
+      .filter(row => row.attendance_date === reportDate && row.status === 'absent')
+      .map(row => {
+        const student = (records('students') || []).find(item => item.id === row.student_id);
+        if (!student || existing.has(student.id)) return null;
+        return {
+          school_id: state.currentSchoolId,
+          report_date: reportDate,
+          class_id: student.class_id || row.class_id,
+          student_id: student.id,
+          status: 'absent'
+        };
+      })
+      .filter(Boolean);
+    if (!rows.length) return;
+    await api('absentee_records?on_conflict=school_id,student_id,report_date', {
+      method: 'POST',
+      body: rows,
+      prefer: 'resolution=merge-duplicates,return=minimal'
+    });
+  };
+
+
 
   const refreshData = async () => {
     const schools = await api('schools?select=*');
@@ -165,10 +198,11 @@
       state.currentSchoolId = schools.find(school => school.id === state.profile.school_id)?.id || schools[0]?.id || '';
     }
     if (!state.currentSchoolId) throw new Error('No school is available for this account. Ask the developer to configure a school.');
-    const tableNames = ['students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students', 'homework_diaries', 'homework_receipts'];
+    const tableNames = ['students', 'teachers', 'classes', 'subjects', 'class_subjects', 'subject_enrollments', 'attendance', 'subject_attendance', 'assessments', 'marks', 'parent_students', 'homework_diaries', 'homework_receipts', 'absentee_records'];
     const schoolFilter = `school_id=eq.${encodeURIComponent(state.currentSchoolId)}&select=*`;
     const loaded = await Promise.all(tableNames.map(async table => [table, await api(`${table}?${schoolFilter}`)]));
     loaded.forEach(([table, rows]) => { state.data[table] = rows; });
+    await syncAbsenteeRecords().catch(() => {});
     await refreshImageUrls();
   };
 
@@ -619,10 +653,19 @@
 
   const directoryView = (table, title, subtitle, actionLabel) => {
     const rows = allowedRows(table);
+    const isStudentDirectory = table === 'students';
+    const filteredRows = isStudentDirectory && isManager() && state.studentDirectoryClass
+      ? rows.filter(row => row.class_id === state.studentDirectoryClass)
+      : rows;
+    const classSelector = isStudentDirectory && isManager()
+      ? `<select id="studentDirectoryClass" class="field-select"><option value="">All classes</option>${records('classes').map(row => `<option value="${escapeHtml(row.id)}" ${row.id === state.studentDirectoryClass ? 'selected' : ''}>${escapeHtml(row.name)}</option>`).join('')}</select>
+         <button class="button button-outline button-small" data-action="select-student-class">Select Class</button>`
+      : '';
     const add = isManager() ? `<button class="button button-primary button-small" data-action="add" data-table="${table}">＋ ${actionLabel}</button>` : '';
-    return `${pageHeading('PEOPLE DIRECTORY', title, subtitle, add)}
-      <div class="table-toolbar"><input id="tableSearch" class="table-search" type="search" value="${escapeHtml(state.search)}" placeholder="Search by name, ID, or class…" aria-label="Search records"><span class="summary-chip">${rows.length} records</span></div>
-      ${table === 'students' ? studentsTable(rows) : teachersTable(rows)}`;
+    const actions = isManager() ? `${classSelector} ${add}` : '';
+    return `${pageHeading('PEOPLE DIRECTORY', title, subtitle, actions)}
+      <div class="table-toolbar"><input id="tableSearch" class="table-search" type="search" value="${escapeHtml(state.search)}" placeholder="Search by name, ID, or class…" aria-label="Search records"><span class="summary-chip">${filteredRows.length} records</span></div>
+      ${table === 'students' ? studentsTable(filteredRows) : teachersTable(rows)}`;
   };
 
   const classesAndSubjectsView = () => {
@@ -986,21 +1029,35 @@
   };
 
   const reportsView = () => {
-    const marks = permittedMarks();
-    const average = marks.length ? Math.round(marks.reduce((sum, row) => sum + Number(row.score), 0) / marks.length) : 0;
-    const studentIds = new Set(permittedStudents());
-    const attendance = records('attendance').filter(row => studentIds.has(row.student_id));
-    const present = attendance.filter(row => row.status === 'present').length;
-    const attendanceRate = attendance.length ? Math.round(present / attendance.length * 100) : 0;
-    return `${pageHeading('ACADEMIC INSIGHTS', 'Reports', 'A quick summary of attendance and assessment performance.', '<button class="button button-primary button-small" data-action="export">Download CSV report</button>')}
-      <div class="callout"><strong>Privacy reminder</strong> · Reports may contain student information. Download only on a trusted device and share securely.</div>
-      <div class="metrics-grid">
-        ${metric('Average score', `${average}%`, '↗', `${marks.length} marks recorded`)}
-        ${metric('Attendance rate', `${attendanceRate}%`, '✓', `${present} present records`)}
-        ${metric('Assessments', records('assessments').length, '▤', 'Monthly tests and term exams')}
-        ${metric('Classes', records('classes').length, '▦', `${records('subjects').length} subjects`)}
+    const date = state.absenteeDate || todayISO();
+    state.absenteeDate = date;
+    const permitted = new Set(permittedStudents());
+    const absentRows = records('attendance')
+      .filter(row => row.attendance_date === date && row.status === 'absent' && permitted.has(row.student_id))
+      .map((row, index) => {
+        const student = records('students').find(item => item.id === row.student_id);
+        if (!student) return '';
+        const initials = student.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join('');
+        return `<tr>
+          <td>${index + 1}</td>
+          <td>${photo(student, initials)}</td>
+          <td><strong>${escapeHtml(student.full_name)}</strong></td>
+          <td>${escapeHtml(className(student.class_id))}</td>
+          <td>${escapeHtml(date)}</td>
+        </tr>`;
+      })
+      .filter(Boolean);
+    return `${pageHeading('STUDENTS DAILY ABSENTEE REPORT', 'Students daily absentee report', 'Daily list of students marked absent, saved with class and date.', '')}
+      <div class="table-toolbar">
+        <label class="field-label">Date <input id="absenteeDate" class="field-input" type="date" value="${escapeHtml(date)}"></label>
+        <span class="summary-chip">${absentRows.length} absent</span>
       </div>
-      <section class="panel" style="margin-top:16px"><header class="panel-header"><div><h2>Student results</h2><p>Recorded assessment scores and class averages</p></div></header><div class="panel-body">${marks.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Student</th><th>Class</th><th>Assessment</th><th>Score</th><th>Result</th></tr></thead><tbody>${marks.map(mark => { const test = records('assessments').find(row => row.id === mark.assessment_id); const student = records('students').find(row => row.id === mark.student_id); return student && test ? `<tr><td>${escapeHtml(student.full_name)}</td><td>${escapeHtml(className(student.class_id))}</td><td>${escapeHtml(test.title)}</td><td>${escapeHtml(mark.score)} / ${escapeHtml(test.max_marks)}</td><td><span class="status-pill">${Math.round(mark.score / test.max_marks * 100)}%</span></td>` : ''; }).join('')}</tbody></table></div>` : '<div class="empty-state">Marks appear here after teachers record assessment results.</div>'}</div></section>`;
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Sr. No.</th><th>Photo</th><th>Name of student</th><th>Class</th><th>Date of absentee</th></tr></thead>
+          <tbody>${absentRows.length ? absentRows.join('') : '<tr><td colspan="5"><div class="empty-state">No absent students recorded for this date.</div></td></tr>'}</tbody>
+        </table>
+      </div>`;
   };
 
   const reportCardMonths = () => termMonths[normalizedTerm(state.reportCardTerm)];
@@ -1098,11 +1155,13 @@
 
   const reportCardRemark = (average, scope) => {
     if (average === null) return 'No marks have been recorded for this period yet.';
-    if (average >= 90) return 'Excellent performance. Shows great dedication.';
-    if (average >= 80) return 'Very good performance. Keep up the excellent work.';
+    if (average >= 90) return 'Excellent performance. Keep up the outstanding work and continue refining advanced skills.';
+    if (average >= 80) return 'Very good performance. Maintain consistency and aim for excellence.';
     if (average >= 70) return 'Good performance. A little more practice will secure a higher grade.';
-    if (average >= 60) return 'Satisfactory performance. More revision is advised.';
-    return 'Needs improvement. Please concentrate on each subject to raise the grade.';
+    if (average >= 60) return 'Satisfactory performance. More revision and regular practice are advised.';
+    if (average >= 50) return 'Fair performance. Focused study and teacher support can improve results.';
+    if (average >= 40) return 'Needs improvement. Concentrate on weak subjects and complete all assignments.';
+    return 'Below 40% average. Immediate remedial support and consistent practice are required.';
   };
 
   const reportCardGraph = (points, passLine, compact = false) => {
@@ -1222,7 +1281,7 @@
           </section>
           <section class="report-card-panel report-card-remarks">
             <h3>PRINCIPAL'S REMARKS</h3>
-            <p>${escapeHtml(reportCardRemark(average, scope))}</p>
+            <textarea class="field-input report-card-remarks-input" rows="3" readonly>${escapeHtml(reportCardRemark(average, scope))}</textarea>
           </section>
         </div>
       </div>
@@ -1618,6 +1677,12 @@
     const dialog = $('#recordDialog');
     dialog.dataset.table = table;
     dialog.dataset.id = row?.id || '';
+    if (table === 'students' && !row && state.studentDirectoryClass) {
+      setTimeout(() => {
+        const classField = $('#recordForm')?.elements?.namedItem('class_id');
+        if (classField) classField.value = state.studentDirectoryClass;
+      }, 0);
+    }
     if (table === 'assessments') {
       const form = $('#recordForm');
       const typeField = form.elements.namedItem('assessment_type');
@@ -1750,6 +1815,13 @@
     const { action, table, id } = button.dataset;
     try {
       if (action === 'add') openRecordDialog(table);
+      if (action === 'select-student-class') {
+        const select = $('#studentDirectoryClass');
+        state.studentDirectoryClass = select?.value || '';
+        goToView('students');
+        showToast(state.studentDirectoryClass ? `Class selected: ${className(state.studentDirectoryClass)}` : 'All classes selected.');
+        return;
+      }
       if (action === 'edit') openRecordDialog(table, records(table).find(row => row.id === id));
       if (action === 'delete') {
         const record = records(table).find(row => row.id === id);
@@ -1839,6 +1911,16 @@
     if (target.matches('[data-report-card-month]')) {
       state.reportCardMonth = target.value;
       goToView('reportcards');
+      return;
+    }
+    if (target.id === 'absenteeDate') {
+      state.absenteeDate = target.value || todayISO();
+      goToView('reports');
+      return;
+    }
+    if (target.id === 'studentDirectoryClass') {
+      state.studentDirectoryClass = target.value;
+      goToView('students');
       return;
     }
     if (event.target.id === 'gradebookClass') {
