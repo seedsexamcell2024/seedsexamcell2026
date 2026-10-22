@@ -324,7 +324,19 @@ button { cursor: pointer; }
 .attendance-choice.status-absent.selected { border-color: #e6a36e; background: #fff3e9; color: #a85d32; }
 .attendance-choice.status-leave.selected { border-color: #aab5cb; background: #f0f2f8; color: #596881; }
 .attendance-choice.status-holiday.selected { border-color: #dfbf6d; background: #fff8e8; color: #927027; }
+/* P = Present: bold */
+.attendance-choice.status-present.selected strong { font-weight: 900; letter-spacing: .05em; }
+/* A = Absent: encircled in black with white font and black background */
+.attendance-choice.status-absent.selected { border-color: #000; background: #000; color: #fff; box-shadow: 0 0 0 2px #fff; }
+.attendance-choice.status-absent.selected strong { color: #fff; font-weight: 900; }
+.attendance-choice.status-absent.selected small { color: #fff; }
 .attendance-choice:disabled { cursor: default; opacity: .8; }
+/* Daily register status label: P bold, A circled black */
+.attendance-status-label.status-present { font-weight: 900; letter-spacing: .05em; }
+.attendance-status-label.status-absent { color: #fff; background: #000; border: 1px solid #fff; border-radius: 20px; padding: 3px 7px; font-weight: 900; letter-spacing: .05em; }
+/* Monthly register: P bold, A circled black */
+.monthly-register-table td.status-present { color: #111; font-weight: 900; }
+.monthly-register-table td.status-absent { color: #fff; background: #000; border: 1px solid #fff; font-weight: 900; border-radius: 4px; }
 .attendance-save-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: white; }
 .attendance-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .attendance-summary-item { display: inline-flex; align-items: center; gap: 5px; color: #78837a; font-size: 9px; }
