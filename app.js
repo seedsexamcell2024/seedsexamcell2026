@@ -697,8 +697,31 @@
       if (!response.ok) throw new Error(auth.msg || auth.message || 'Sign in failed. Check your mobile number.');
       state.token = auth.access_token;
       state.user = auth.user;
-      const profiles = await api(`profiles?id=eq.${encodeURIComponent(auth.user.id)}&select=*`);
-      if (!profiles.length) throw new Error('Your account has no school profile yet. Ask your administrator for help.');
+      let profiles = await api(`profiles?id=eq.${encodeURIComponent(auth.user.id)}&select=*`);
+      if (!profiles.length) {
+        // Auto-create a developer profile when signing in as developer with no existing profile.
+        if (state.selectedLoginRole === 'developer') {
+          const schoolsResp = await api('schools?select=*');
+          const school = schoolsResp?.[0] || null;
+          if (!school) throw new Error('No school exists yet. Ask an administrator to create a school first.');
+          const created = await api('profiles', {
+            method: 'POST',
+            body: {
+              id: auth.user.id,
+              school_id: school.id,
+              role: 'developer',
+              display_name: 'Developer',
+              teacher_id: null,
+              student_id: null
+            },
+            prefer: 'return=representation'
+          });
+          if (!created?.length) throw new Error('Could not create developer profile. Ask your administrator for help.');
+          profiles = created;
+        } else {
+          throw new Error('Your account has no school profile yet. Ask your administrator for help.');
+        }
+      }
       state.profile = profiles[0];
       if (state.profile.role !== state.selectedLoginRole) {
         throw new Error(`This is a ${roleNames[state.profile.role] || 'different'} account. Choose the matching account type and try again.`);
