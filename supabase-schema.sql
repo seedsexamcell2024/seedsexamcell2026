@@ -60,6 +60,7 @@ create table if not exists public.students (
   guardian_name text,
   guardian_phone text,
   photo_path text,
+  roll_number text,
   status text not null default 'Active' check (status in ('Active', 'Inactive')),
   created_at timestamptz not null default now(),
   unique (school_id, student_id),
@@ -867,7 +868,7 @@ create policy "Developers manage all marks" on public.marks for all to authentic
   using (public.is_platform_developer()) with check (public.is_platform_developer());
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('school-media', 'school-media', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+values ('school-media', 'school-media', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do update set
   public = excluded.public,
   file_size_limit = excluded.file_size_limit,

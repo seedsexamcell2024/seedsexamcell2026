@@ -153,6 +153,15 @@
     const uniquePaths = [...new Set(paths)];
     const results = await Promise.all(uniquePaths.map(async path => {
       const objectPath = path.split('/').map(encodeURIComponent).join('/');
+      // Prefer the public URL (works when the bucket is public); fall back to a
+      // signed URL for private buckets.
+      const publicUrl = `${supabaseUrl}/storage/v1/object/public/school-media/${objectPath}`;
+      try {
+        const probe = await fetch(publicUrl, { method: 'HEAD' });
+        if (probe.ok) return [path, publicUrl];
+      } catch (error) {
+        // Fall through to signed URL attempt
+      }
       try {
         const response = await fetch(`${supabaseUrl}/storage/v1/object/sign/school-media/${objectPath}`, {
           method: 'POST',
@@ -163,8 +172,7 @@
         const result = await response.json();
         return [path, result.signedURL.startsWith('http') ? result.signedURL : `${supabaseUrl}${result.signedURL}`];
       } catch (error) {
-        // Fallback: try direct public Supabase storage URL if signed URL fails
-        return [path, `${supabaseUrl}/storage/v1/object/public/school-media/${objectPath}`];
+        return [path, publicUrl];
       }
     }));
     state.imageUrls = Object.fromEntries(results.filter(Boolean));
