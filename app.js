@@ -920,7 +920,10 @@
         <div class="attendance-calendar-grid">
           ${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(day => `<span class="attendance-calendar-weekday">${day}</span>`).join('')}
           ${Array.from({ length: calendarLeadingBlanks }, () => '<span class="attendance-calendar-blank"></span>').join('')}
-          ${calendarDays.map(day => `<button type="button" class="attendance-calendar-day ${day.iso === state.attendanceDate ? 'selected' : ''} ${day.weekend ? 'weekend' : ''}" data-attendance-date="${escapeHtml(day.iso)}">${day.number}</button>`).join('')}
+          ${calendarDays.map(day => {
+            const isHol = isHoliday(day.iso);
+            return `<button type="button" class="attendance-calendar-day ${day.iso === state.attendanceDate ? 'selected' : ''} ${day.weekend ? 'weekend' : ''} ${isHol ? 'holiday' : ''}" data-attendance-date="${escapeHtml(day.iso)}" ${isHol ? 'disabled' : ''} title="${isHol ? escapeHtml(holidayTitle(day.iso)) : ''}">${day.number}</button>`;
+          }).join('')}
         </div>
       </div>
       <div class="attendance-list">
