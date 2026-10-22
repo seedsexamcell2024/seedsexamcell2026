@@ -41,6 +41,7 @@ create table if not exists public.teachers (
   email text,
   phone text,
   photo_path text,
+  extra_fields jsonb not null default '{}'::jsonb,
   status text not null default 'Active' check (status in ('Active', 'Inactive')),
   created_at timestamptz not null default now(),
   unique (school_id, teacher_id),
