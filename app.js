@@ -93,7 +93,9 @@
     accounts: 'User accounts',
     school: 'School settings',
     credit: 'Developer credit',
-    homework: 'Homework diary'
+    homework: 'Homework diary',
+    session: 'Session & promotion',
+    reminders: 'Teacher reminders'
   };
 
   const roleNames = {
@@ -311,8 +313,56 @@
     return savedRows[0];
   };
 
+  const deleteDependents = async (table, id) => {
+    const schoolId = state.currentSchoolId;
+    const del = (target, filter) => api(`${target}?${filter}`, { method: 'DELETE', prefer: 'return=minimal' });
+    if (table === 'students') {
+      await del('attendance', `student_id=eq.${encodeURIComponent(id)}`);
+      await del('subject_attendance', `student_id=eq.${encodeURIComponent(id)}`);
+      await del('marks', `student_id=eq.${encodeURIComponent(id)}`);
+      await del('subject_enrollments', `student_id=eq.${encodeURIComponent(id)}`);
+      await del('parent_students', `student_id=eq.${encodeURIComponent(id)}`);
+      await del('absentee_records', `student_id=eq.${encodeURIComponent(id)}`);
+      await del('homework_receipts', `student_id=eq.${encodeURIComponent(id)}`);
+    } else if (table === 'teachers') {
+      await del('class_subjects', `teacher_id=eq.${encodeURIComponent(id)}`);
+      await del('homework_diaries', `teacher_id=eq.${encodeURIComponent(id)}`);
+    } else if (table === 'subjects') {
+      const assignments = records('class_subjects').filter(row => row.subject_id === id);
+      for (const assignment of assignments) {
+        await del('subject_enrollments', `assignment_id=eq.${encodeURIComponent(assignment.id)}`);
+        await del('subject_attendance', `subject_id=eq.${encodeURIComponent(id)}`);
+      }
+      const assessments = records('assessments').filter(row => row.subject_id === id);
+      for (const assessment of assessments) {
+        await del('marks', `assessment_id=eq.${encodeURIComponent(assessment.id)}`);
+        await del('assessments', `id=eq.${encodeURIComponent(assessment.id)}`);
+      }
+      await del('class_subjects', `subject_id=eq.${encodeURIComponent(id)}`);
+      await del('homework_diaries', `subject_id=eq.${encodeURIComponent(id)}`);
+    } else if (table === 'classes') {
+      const students = records('students').filter(row => row.class_id === id);
+      for (const student of students) await deleteRow('students', student.id);
+      const assignments = records('class_subjects').filter(row => row.class_id === id);
+      for (const assignment of assignments) {
+        await del('subject_enrollments', `assignment_id=eq.${encodeURIComponent(assignment.id)}`);
+      }
+      const assessments = records('assessments').filter(row => row.class_id === id);
+      for (const assessment of assessments) {
+        await del('marks', `assessment_id=eq.${encodeURIComponent(assessment.id)}`);
+        await del('assessments', `id=eq.${encodeURIComponent(assessment.id)}`);
+      }
+      await del('class_subjects', `class_id=eq.${encodeURIComponent(id)}`);
+      await del('attendance', `class_id=eq.${encodeURIComponent(id)}`);
+      await del('subject_attendance', `class_id=eq.${encodeURIComponent(id)}`);
+      await del('absentee_records', `class_id=eq.${encodeURIComponent(id)}`);
+      await del('homework_diaries', `class_id=eq.${encodeURIComponent(id)}`);
+    }
+  };
+
   const deleteRow = async (table, id) => {
     const removed = records(table).find(row => row.id === id);
+    await deleteDependents(table, id);
     await api(`${table}?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE', prefer: 'return=minimal' });
     if (removed?.photo_path) await removeImage(removed.photo_path);
     await refreshData();
