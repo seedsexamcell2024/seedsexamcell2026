@@ -190,7 +190,10 @@
       },
       body: file
     });
-    if (!response.ok) throw new Error(`Image upload failed (${response.status}).`);
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Image upload failed (${response.status})${body ? `: ${body}` : ''}.`);
+    }
     return path;
   };
 
@@ -1888,7 +1891,8 @@
       const previousPhotoPath = id ? records(table).find(row => row.id === id)?.photo_path : null;
       const hasPhoto = file instanceof File && file.size > 0;
       if (hasPhoto) validateImage(file);
-      if (hasPhoto) saveId ||= crypto.randomUUID();
+      // Pre-generation of saveId removed: new records must POST first.
+
 
       savedRecord = await saveRow(table, payload, saveId);
       state.data[table] = id
