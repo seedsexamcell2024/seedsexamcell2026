@@ -1432,6 +1432,7 @@
       <section class="panel"><header class="panel-header"><div><h2>School identity</h2><p>The logo appears in the school workspace.</p></div></header>
         <form id="schoolSettingsForm" class="panel-body dialog-fields">
           ${field('school_name', 'School name', 'text', SCHOOL_NAME, null, true, true)}
+           ${field('academic_year', 'Academic session (year)', 'text', school.academic_year || '', null, true, true)}
           ${imageField('logo_file', 'School logo', logo, true)}
           <div class="full-field"><button class="button button-primary" type="submit">Save school settings</button></div>
         </form>
@@ -1592,6 +1593,148 @@
     }
   };
 
+const sessionView = () => {
+  const school = currentSchool();
+  const canManage = isManager();
+  const nextYear = String((Number(school.academic_year) || new Date().getFullYear()) + 1);
+  const classOptions = records('classes').map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  return `${pageHeading('SESSION & PROMOTION', 'Session & promotion', 'Start a new academic session and promote students to their next class.', '')}
+    ${canManage ? `<section class="panel"><header class="panel-header"><div><h2>Start new session</h2><p>Update the academic session used across attendance, assessments, and reports.</p></div></header><div class="panel-body"><form id="newSessionForm" class="dialog-fields">
+      ${field('session_year', 'New academic session (year)', 'text', nextYear, null, true, true)}
+      <label class="field-label full-field"><input type="checkbox" name="promote_students" value="1"> Promote all active students to their next class while starting this session</label>
+      <div class="full-field"><button class="button button-primary" type="submit">Start new session</button></div>
+    </form></div></section>` : ''}
+    ${canManage ? `<section class="panel" style="margin-top:16px"><header class="panel-header"><div><h2>Promote students</h2><p>Move a class roster to the next class after the second-term result.</p></div></header><div class="panel-body dialog-fields">
+      <label class="field-label">From class<select class="field-select" id="promotionSourceClass">${classOptions}</select></label>
+      <label class="field-label">To class<select class="field-select" id="promotionTargetClass">${classOptions}</select></label>
+      <div class="full-field" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="button button-outline" data-action="create-next-class">Create next class</button>
+        <button type="button" class="button button-primary" data-action="promote-students">Promote students</button>
+      </div>
+      <p class="form-message" id="promotionStatus"></p>
+    </div></section>` : '<div class="empty-state">Only administrators and developers can manage sessions.</div>'}`;
+};
+
+const startNewSession = async event => {
+  event.preventDefault();
+  const form = event.target;
+  const formData = new FormData(form);
+  const year = String(formData.get('session_year') || '').trim();
+  const promote = formData.get('promote_students') === '1';
+  if (!/^\d{4}$/.test(year)) {
+    showToast('Enter a valid 4-digit academic session year.', true);
+    return;
+  }
+  try {
+    await api(`schools?id=eq.${encodeURIComponent(state.currentSchoolId)}`, { method: 'PATCH', body: { academic_year: year }, prefer: 'return=minimal' });
+    if (promote) {
+      for (const source of [...records('classes')]) {
+        const students = records('students').filter(student => student.class_id === source.id && student.status === 'Active');
+        if (!students.length) continue;
+        const nextGrade = String(Number(source.grade) + 1);
+        if (!Number.isFinite(Number(source.grade))) continue;
+        let target = records('classes').find(item => String(item.grade) === nextGrade && item.section === source.section);
+        if (!target) {
+          const saved = await api('classes', { method: 'POST', body: { school_id: state.currentSchoolId, grade: nextGrade, section: source.section }, prefer: 'return=representation' });
+          target = saved?.[0];
+          await refreshData();
+        }
+        for (const student of students) {
+          await api(`students?id=eq.${encodeURIComponent(student.id)}`, { method: 'PATCH', body: { class_id: target.id }, prefer: 'return=minimal' });
+        }
+      }
+      await refreshData();
+    } else {
+      await refreshData();
+    }
+    syncSchoolIdentity();
+    goToView('session');
+    showToast('New academic session started.');
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : 'Could not start the new session.', true);
+  }
+};
+
+const createNextClass = async () => {
+  const source = records('classes').find(item => item.id === $('#promotionSourceClass')?.value);
+  if (!source) throw new Error('Choose a source class.');
+  const nextGrade = String(Number(source.grade) + 1);
+  await api('classes', { method: 'POST', body: { school_id: state.currentSchoolId, grade: nextGrade, section: source.section }, prefer: 'return=representation' });
+  await refreshData();
+  goToView('session');
+  showToast('Next class created.');
+};
+
+const promoteStudents = async () => {
+  const sourceId = $('#promotionSourceClass')?.value;
+  const targetId = $('#promotionTargetClass')?.value;
+  if (!sourceId || !targetId || sourceId === targetId) throw new Error('Choose different source and target classes.');
+  const students = records('students').filter(student => student.class_id === sourceId && student.status === 'Active');
+  if (!students.length) {
+    showToast('No active students in the selected source class.', true);
+    return;
+  }
+  for (const student of students) {
+    await api(`students?id=eq.${encodeURIComponent(student.id)}`, { method: 'PATCH', body: { class_id: targetId }, prefer: 'return=minimal' });
+  }
+  await refreshData();
+  goToView('session');
+  showToast(`Promoted ${students.length} students.`);
+};
+
+
+
+const remindersView = () => {
+  const canManage = isManager();
+  const appLink = window.location.href.split('#')[0];
+  const today = todayISO();
+  const currentMonth = today.slice(5, 7);
+  const currentYear = today.slice(0, 4);
+  const missingByTeacher = new Map();
+  const addPending = (teacherId, item) => {
+    if (!teacherId) return;
+    if (!missingByTeacher.has(teacherId)) missingByTeacher.set(teacherId, new Set());
+    missingByTeacher.get(teacherId).add(item);
+  };
+  for (const assignment of records('class_subjects')) {
+    const hasClassAttendance = records('attendance').some(row => row.attendance_date === today && row.class_id === assignment.class_id);
+    const hasSubjectAttendance = records('subject_attendance').some(row => row.attendance_date === today && row.class_id === assignment.class_id && row.subject_id === assignment.subject_id);
+    if (!hasClassAttendance && !hasSubjectAttendance) {
+      addPending(assignment.teacher_id, `Daily attendance not saved for ${className(assignment.class_id)} · ${subjectName(assignment.subject_id)}`);
+    }
+  }
+  for (const assessment of records('assessments')) {
+    if (assessment.assessment_type !== 'Monthly test') continue;
+    if (String(assessment.assessment_date || '').slice(5, 7) !== currentMonth || String(assessment.assessment_date || '').slice(0, 4) !== currentYear) continue;
+    const assignment = records('class_subjects').find(row => row.class_id === assessment.class_id && row.subject_id === assessment.subject_id);
+    const enrolled = records('subject_enrollments').filter(row => row.assignment_id === assignment?.id).map(row => row.student_id);
+    const marks = records('marks').filter(row => row.assessment_id === assessment.id);
+    const filled = marks.filter(row => row.score !== null && row.score !== undefined && String(row.score).trim() !== '').length;
+    if (filled < (enrolled.length || 1)) {
+      addPending(assignment?.teacher_id, `Monthly test marks pending for ${className(assessment.class_id)} · ${subjectName(assessment.subject_id)} (${assessment.title})`);
+    }
+  }
+  const rows = [...missingByTeacher.entries()].map(([teacherId, items]) => {
+    const teacher = records('teachers').find(row => row.id === teacherId);
+    if (!teacher) return '';
+    const phone = normalizeMobile(teacher.phone || '');
+    const pending = [...items].join('; ');
+    const homeworkLink = `${appLink} (open Homework diary)`;
+    const message = `Assalam o Alaikum ${teacher.full_name}. Pending items: ${pending}. Please also send homework from the app: ${appLink}. Homework area: ${homeworkLink}.`;
+    const whatsapp = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}` : '';
+    return `<tr>
+      <td><strong>${escapeHtml(teacher.full_name)}</strong><small>${escapeHtml(teacher.phone || 'No phone')}</small></td>
+      <td>${escapeHtml(pending)}</td>
+      <td>${whatsapp ? `<a class="button button-outline button-small" href="${escapeHtml(whatsapp)}" target="_blank" rel="noopener">Send WhatsApp</a>` : '<span class="status-pill">No phone</span>'}</td>
+    </tr>`;
+  }).filter(Boolean);
+  return `${pageHeading('TEACHER REMINDERS', 'Teacher reminders', 'WhatsApp reminders for teachers with pending attendance or monthly-test marks.', '')}
+    ${!canManage ? '<div class="empty-state">Only administrators and developers can send reminders.</div>' : `
+      <div class="callout"><strong>Automatic reminders</strong> · Links open WhatsApp with a pre-filled message, app link, and homework area reference.</div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Teacher</th><th>Pending items</th><th>WhatsApp</th></tr></thead><tbody>${rows.length ? rows.join('') : '<tr><td colspan="3"><div class="empty-state">No pending teacher reminders.</div></td></tr>'}</tbody></table></div>`}`;
+};
+
+
   const goToView = view => {
     if (!labels[view]) return;
     state.view = view;
@@ -1637,9 +1780,9 @@
     return `<label class="${klass}">${escapeHtml(label)}${control}</label>`;
   };
 
-  const imageField = (name, label, value, logo = false) => `
+  const imageField = (name, label, value, logo = false, passport = false) => `
     <label class="field-label full-field">${escapeHtml(label)}
-      <img class="image-preview ${logo ? 'logo-preview' : ''}" data-preview-for="${name}" src="${escapeHtml(value || '')}" alt="Current ${escapeHtml(label.toLowerCase())}" ${value ? '' : 'hidden'}>
+      <img class="image-preview ${logo ? 'logo-preview' : ''} ${passport ? 'passport-preview' : ''}" data-preview-for="${name}" src="${escapeHtml(value || '')}" alt="Current ${escapeHtml(label.toLowerCase())}" ${value ? '' : 'hidden'}>
       <input class="field-input image-upload" type="file" name="${name}" accept="image/jpeg,image/png,image/webp" aria-label="${escapeHtml(label)}">
       <small>Choose an image from your device · JPG, PNG, or WEBP · maximum 5 MB${value ? ' · choose a file to replace the current image' : ''}</small>
     </label>`;
@@ -1666,7 +1809,7 @@
   const formDefinitions = {
     students: {
       title: 'Student', fields: (row = {}) => [
-        imageField('photo_file', 'Student picture', imageSrc(row)),
+        imageField('photo_file', 'Student picture', imageSrc(row), false, true),
         field('full_name', 'Full name', 'text', row.full_name, null, true),
         field('gender', 'Gender', 'select', row.gender || '', [{ value: '', label: 'Select gender' }, ...['Female', 'Male', 'Other'].map(value => ({ value, label: value }))]),
         field('class_id', 'Class', 'select', row.class_id || '', optionList(records('classes'), 'name', 'Select class'), true),
@@ -1912,6 +2055,16 @@
     const { action, table, id } = button.dataset;
     try {
       if (action === 'add') openRecordDialog(table);
+       if (action === 'create-next-class') {
+         try { await createNextClass(); }
+         catch (error) { showToast(error instanceof Error ? error.message : 'Could not create the next class.', true); }
+         return;
+       }
+       if (action === 'promote-students') {
+         try { await promoteStudents(); }
+         catch (error) { showToast(error instanceof Error ? error.message : 'Could not promote students.', true); }
+         return;
+       }
       if (action === 'select-student-class') {
         const select = $('#studentDirectoryClass');
         state.studentDirectoryClass = select?.value || '';
@@ -2343,6 +2496,7 @@
     event.preventDefault();
     const formData = new FormData(event.target);
     const name = String(formData.get('school_name') || '').trim();
+    const academicYear = String(formData.get('academic_year') || '').trim();
     const file = formData.get('logo_file');
     if (!name) {
       showToast('Enter the school name.', true);
@@ -2350,6 +2504,7 @@
     }
     try {
       const payload = { name };
+      if (academicYear) payload.academic_year = academicYear;
       if (file instanceof File && file.size) {
         validateImage(file);
         const path = `${state.currentSchoolId}/school/logo.${imageExtension(file)}`;
@@ -2773,6 +2928,7 @@
     pageContent.addEventListener('submit', event => {
       if (event.target.id === 'createAccountForm') createAccount(event);
       if (event.target.id === 'schoolSettingsForm') saveSchoolSettings(event);
+       if (event.target.id === 'newSessionForm') startNewSession(event);
       if (event.target.id === 'developerCreditForm') saveDeveloperCredit(event);
       if (event.target.id === 'homeworkDiaryForm') saveHomeworkDiary(event);
     });

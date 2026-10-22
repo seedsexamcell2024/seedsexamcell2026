@@ -46,6 +46,7 @@ button { cursor: pointer; }
 .login-form label, .field-label { display: grid; gap: 7px; color: #455148; font-size: 12px; font-weight: 600; }
 .image-preview { width: 48px; height: 48px; margin-top: 4px; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: #f3f6f3; object-fit: cover; }
 .image-preview.logo-preview { width: 64px; height: 64px; border-radius: 12px; }
+.image-preview.passport-preview { width: 96px; height: 128px; margin-top: 4px; border-radius: 6px; background: #f3f6f3; object-fit: contain; }
 .image-upload { min-height: 44px; padding: 8px 10px; }
 .developer-links { margin: 8px 0 0 18px; }
 .developer-links li { margin: 4px 0; }
@@ -634,7 +635,7 @@ button { cursor: pointer; }
 .report-card-identity-lines p:first-of-type { display: flex; flex-wrap: wrap; gap: 18px; }
 .report-card-gender { color: #4c5a51; }
 .report-card-photo { display: grid; place-items: center; width: 96px; height: 116px; flex: 0 0 auto; border: 1px solid #c9d2cb; border-radius: 6px; background: white; overflow: hidden; font-size: 10px; color: #93a098; }
-.report-card-photo img { width: 100%; height: 100%; object-fit: cover; }
+.report-card-photo img { width: 100%; height: 100%; object-fit: contain; }
 .report-card-table { width: 100%; margin-top: 14px; border-collapse: collapse; font-size: 11.5px; }
 .report-card-table th, .report-card-table td { border: 1px solid #b9c4bc; padding: 6px 8px; text-align: center; }
 .report-card-table th { background: #eaf4ed; color: #1a4f3a; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
@@ -945,7 +946,7 @@ button { cursor: pointer; }
   width: 96px; height: 116px; flex: 0 0 auto; border: 1px solid #c9d2cb; border-radius: 6px;
   background: white; overflow: hidden; font-size: 10px; color: #93a098; display: grid; place-items: center;
 }
-.report-card-sheet--term .report-card-photo img { width: 100%; height: 100%; object-fit: cover; }
+.report-card-sheet--term .report-card-photo img { width: 100%; height: 100%; object-fit: contain; }
 .report-card-sheet--term .report-card-table {
   width: 100%; margin-top: 14px; border-collapse: collapse; font-size: 11.5px;
   overflow-x: auto; display: block;
