@@ -147,6 +147,28 @@ update public.attendance set status = 'leave' where status = 'late';
 alter table public.attendance add constraint attendance_status_check
   check (status in ('present', 'absent', 'leave', 'holiday'));
 
+create table if not exists public.school_holidays (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid not null references public.schools(id) on delete cascade,
+  holiday_date date not null,
+  title text not null,
+  description text,
+  created_by uuid not null default auth.uid() references auth.users(id),
+  created_at timestamptz not null default now(),
+  unique (school_id, holiday_date),
+  foreign key (school_id, school_id) references public.schools(id, id)
+);
+
+alter table public.school_holidays enable row level security;
+
+create policy "School members view holidays" on public.school_holidays for select to authenticated
+  using (school_id = public.my_school_id());
+
+create policy "Staff manage holidays" on public.school_holidays for all to authenticated
+  with check (school_id = public.my_school_id() and public.is_school_admin());
+
+create index if not exists school_holidays_school_date_idx on public.school_holidays (school_id, holiday_date);
+
 create table if not exists public.subject_attendance (
   id uuid primary key default gen_random_uuid(),
   school_id uuid not null references public.schools(id) on delete cascade,
