@@ -2076,6 +2076,30 @@ const remindersView = () => {
   };
 
   const handleClick = async event => {
+    if (event.target.closest('#brandingSaveButton')) {
+      const labels = {};
+      document.querySelectorAll('.branding-input').forEach(input => {
+        const key = input.dataset.brandKey;
+        const val = input.value.trim();
+        if (key) labels[key] = val;
+      });
+      const fonts = {
+        nav: Number(document.getElementById('brandFontNav')?.value) || 1,
+        heading: Number(document.getElementById('brandFontHeading')?.value) || 1,
+        column: Number(document.getElementById('brandFontColumn')?.value) || 1
+      };
+      if (window.SEEDS_BRANDING) window.SEEDS_BRANDING.save({ labels, fonts });
+      applyLabelOverrides(document);
+      showToast('Branding saved.');
+      return;
+    }
+    if (event.target.closest('#brandingResetButton')) {
+      if (window.SEEDS_BRANDING) window.SEEDS_BRANDING.resetAll();
+      goToView('branding');
+      showToast('Branding reset to defaults.');
+      return;
+    }
+
     const reportCardScopeButton = event.target.closest('[data-report-card-scope]');
     if (reportCardScopeButton) {
       state.reportCardScope = reportCardScopeButton.dataset.reportCardScope;
