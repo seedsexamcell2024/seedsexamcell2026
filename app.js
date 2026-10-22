@@ -166,7 +166,7 @@
 
   const uploadImage = async (path, file) => {
     const objectPath = path.split('/').map(encodeURIComponent).join('/');
-    const contentType = file.type || 'image/jpeg';
+    const contentType = (file.type === 'image/jpg' ? 'image/jpeg' : file.type) || 'image/jpeg';
     const response = await fetch(`${supabaseUrl}/storage/v1/object/school-media/${objectPath}`, {
       method: 'POST',
       headers: {
@@ -1967,7 +1967,7 @@
     }
   };
 
-  const imageExtension = file => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' })[file.type] || '';
+  const imageExtension = file => ({ 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' })[file.type] || '';
   const validateImage = file => {
     if (!imageExtension(file)) throw new Error('Choose a JPG, PNG, or WEBP image.');
     if (file.size > 5 * 1024 * 1024) throw new Error('Images must be 5 MB or smaller.');
