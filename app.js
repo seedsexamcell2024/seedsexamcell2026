@@ -1609,7 +1609,9 @@
       accounts: accountsView,
       school: schoolSettingsView,
       credit: creditView,
-      homework: homeworkView
+      homework: homeworkView,
+       session: sessionView,
+       reminders: remindersView
     };
     pageContent.innerHTML = views[view]();
     $('#navStudentCount').textContent = state.data.students.length;
