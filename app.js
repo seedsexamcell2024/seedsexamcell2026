@@ -1734,6 +1734,15 @@
       goToView('attendance');
       return;
     }
+    const homeworkVoiceButton = event.target.closest('[data-homework-voice]');
+    if (homeworkVoiceButton) {
+      startHomeworkVoice(homeworkVoiceButton.dataset.homeworkVoice);
+      return;
+    }
+    if (event.target.closest('#homeworkRecordBtn')) {
+      toggleHomeworkRecording();
+      return;
+    }
     const button = event.target.closest('[data-action]');
     if (!button) return;
     const { action, table, id } = button.dataset;
@@ -1752,6 +1761,19 @@
         goToView('assessments');
       }
       if (action === 'export') makeCsv();
+      if (action === 'confirm-homework') {
+        const homeworkId = button.dataset.homeworkId;
+        const studentId = button.dataset.studentId;
+        await api('homework_receipts', { method: 'POST', body: {
+          school_id: state.currentSchoolId,
+          homework_id: homeworkId,
+          student_id: studentId,
+          parent_profile_id: state.user?.id || null
+        }, prefer: 'return=representation' });
+        await refreshData();
+        goToView('homework');
+        showToast('Homework receipt confirmed.');
+      }
       if (action === 'set-password') {
         const input = pageContent.querySelector(`[data-reset-password="${CSS.escape(id)}"]`);
         const password = input?.value || '';
@@ -2202,6 +2224,72 @@
     }
   };
 
+  const audioExtension = type => ({ 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav' })[type] || '';
+
+  const saveHomeworkDiary = async event => {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const classId = String(formData.get('homework_class_id') || '').trim();
+    const subjectId = String(formData.get('homework_subject_id') || '').trim();
+    const teacherId = String(formData.get('homework_teacher_id') || '').trim();
+    const date = String(formData.get('homework_date') || '').trim();
+    const topic = String(formData.get('homework_topic') || '').trim();
+    const content = String(formData.get('homework_content') || '').trim();
+    const imageFiles = Array.from(formData.getAll('homework_images')).filter(file => file instanceof File && file.size);
+    const audioFile = formData.get('homework_audio');
+    const recorded = window.pendingHomeworkAudio || null;
+    if (!classId || !subjectId || !teacherId || !date || !topic) {
+      showToast('Complete all required homework fields.', true);
+      return;
+    }
+    try {
+      const imagePaths = [];
+      for (const file of imageFiles) {
+        validateImage(file);
+        const ext = imageExtension(file);
+        const path = `${state.currentSchoolId}/homework/${(crypto.randomUUID ? crypto.randomUUID() : Date.now())}.${ext}`;
+        await uploadImage(path, file);
+        imagePaths.push(path);
+      }
+      let audioPath = '';
+      const audioToUpload = recorded instanceof Blob
+        ? new File([recorded], `voice.${audioExtension(recorded.type || 'audio/webm')}`, { type: recorded.type || 'audio/webm' })
+        : (audioFile instanceof File && audioFile.size ? audioFile : null);
+      if (audioToUpload) {
+        const ext = audioExtension(audioToUpload.type);
+        if (!ext) throw new Error('Unsupported audio type.');
+        const path = `${state.currentSchoolId}/homework/${(crypto.randomUUID ? crypto.randomUUID() : Date.now())}.${ext}`;
+        await uploadImage(path, audioToUpload);
+        audioPath = path;
+      }
+      await api('homework_diaries', {
+        method: 'POST',
+        body: {
+          school_id: state.currentSchoolId,
+          class_id: classId,
+          subject_id: subjectId,
+          teacher_id: teacherId,
+          homework_date: date,
+          topic,
+          content: content || null,
+          image_paths: imagePaths,
+          audio_path: audioPath || null,
+          created_by: state.user?.id || null
+        },
+        prefer: 'return=representation'
+      });
+      window.pendingHomeworkAudio = null;
+      const status = document.getElementById('homeworkRecordStatus');
+      if (status) status.textContent = '';
+      await refreshData();
+      goToView('homework');
+      showToast('Homework diary saved.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save homework diary.', true);
+    }
+  };
+
   const saveAttendance = async () => {
     if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) {
       throw new Error('Your account is not allowed to record attendance.');
@@ -2447,6 +2535,7 @@
       if (event.target.id === 'createAccountForm') createAccount(event);
       if (event.target.id === 'schoolSettingsForm') saveSchoolSettings(event);
       if (event.target.id === 'developerCreditForm') saveDeveloperCredit(event);
+      if (event.target.id === 'homeworkDiaryForm') saveHomeworkDiary(event);
     });
     $('#recordForm').addEventListener('change', handlePageChange);
     $('#recordForm').addEventListener('submit', saveDialog);
