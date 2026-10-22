@@ -136,6 +136,61 @@
   const studentName = id => records('students').find(row => row.id === id)?.full_name || 'Unknown student';
   const assessmentName = id => records('assessments').find(row => row.id === id)?.title || 'Assessment';
 
+  const pakistanDateISO = () => {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi' }).formatToParts(new Date());
+    const get = type => parts.find(part => part.type === type)?.value || '';
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  };
+  const pakistanTimeMinutes = () => {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
+    const hour = Number(parts.find(part => part.type === 'hour')?.value || '0');
+    const minute = Number(parts.find(part => part.type === 'minute')?.value || '0');
+    return hour * 60 + minute;
+  };
+  const pakistanDayName = date => new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Karachi', weekday: 'long' }).format(new Date(`${date}T12:00:00+05:00`));
+  const normalizeName = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const normalizeClassKey = value => String(value || '').trim().replace(/[\s-]/g, '').toLowerCase();
+  const splitHomeworkSubjects = value => String(value || '').split(/[+,]/).map(part => part.trim()).filter(Boolean);
+  const findClassByName = name => records('classes').find(row => normalizeClassKey(row.name) === normalizeClassKey(name));
+  const findSubjectByName = name => records('subjects').find(row => normalizeName(row.name) === normalizeName(name));
+  const HOMEWORK_SCHEDULE = {
+    '4th': {
+      Monday: ['Maths', 'English', 'Science', 'Urdu'],
+      Tuesday: ['Urdu', 'Science', 'GK'],
+      Wednesday: ['Islamiat', 'English', 'GK'],
+      Thursday: ['Urdu', 'Science', 'Islamiat', 'GK'],
+      Friday: ['Maths', 'Urdu', 'Science']
+    },
+    '7th': {
+      Monday: ['Islamiat', 'English', 'Science', 'Urdu'],
+      Tuesday: ['Urdu', 'Science', 'Maths', 'English'],
+      Wednesday: ['Social Studies', 'English', 'Science', 'Maths'],
+      Thursday: ['Urdu', 'Science', 'Islamiat', 'Social Studies'],
+      Friday: ['Maths', 'Urdu', 'Science', 'Computer']
+    },
+    'O1': {
+      Monday: ['Islamiat', 'English', 'Biology', 'Computer Science'],
+      Tuesday: ['Urdu', 'Physics', 'Maths', 'Business Studies'],
+      Wednesday: ['Pak Studies', 'English', 'Chemistry', 'Commerce + Maths'],
+      Thursday: ['Urdu', 'Physics', 'Islamiat'],
+      Friday: ['Maths', 'Pak Studies', 'Chemistry', 'Biology']
+    },
+    'O2': {
+      Monday: ['Islamiat', 'English', 'Biology', 'Computer Science'],
+      Tuesday: ['Pak Studies', 'English + Urdu', 'Chemistry', 'Business Studies'],
+      Wednesday: ['Pak Studies', 'English', 'Chemistry', 'Commerce + Maths'],
+      Thursday: ['Urdu', 'Physics', 'Islamiat'],
+      Friday: ['Maths', 'Pak Studies', 'Chemistry', 'Biology + Urdu']
+    },
+    'O3': {
+      Monday: ['Chemistry', 'Maths', 'Biology', 'Computer Science + Biology'],
+      Tuesday: ['Physics', 'Chemistry', 'Business Studies'],
+      Wednesday: ['Biology', 'Physics', 'Chemistry', 'Commerce + Maths'],
+      Thursday: ['Physics', 'Chemistry', 'Maths'],
+      Friday: ['Physics', 'Chemistry', 'Maths', 'Biology']
+    }
+  };
+
   const api = async (path, options = {}) => {
     if (!isConfigured) throw new Error('Supabase is not configured. Complete the setup steps in README.md before using school records.');
     const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
@@ -1687,9 +1742,10 @@ const promoteStudents = async () => {
 const remindersView = () => {
   const canManage = isManager();
   const appLink = window.location.href.split('#')[0];
-  const today = todayISO();
+  const today = pakistanDateISO();
   const currentMonth = today.slice(5, 7);
   const currentYear = today.slice(0, 4);
+  const deadlinePassed = pakistanTimeMinutes() >= 14 * 60;
   const missingByTeacher = new Map();
   const addPending = (teacherId, item) => {
     if (!teacherId) return;
@@ -1714,6 +1770,25 @@ const remindersView = () => {
       addPending(assignment?.teacher_id, `Monthly test marks pending for ${className(assessment.class_id)} · ${subjectName(assessment.subject_id)} (${assessment.title})`);
     }
   }
+  if (deadlinePassed) {
+    const todayDay = pakistanDayName(today);
+    for (const [classKey, days] of Object.entries(HOMEWORK_SCHEDULE)) {
+      const subjects = days[todayDay] || [];
+      const klass = findClassByName(classKey);
+      if (!klass) continue;
+      for (const rawSubject of subjects) {
+        for (const subjectNamePart of splitHomeworkSubjects(rawSubject)) {
+          const subject = findSubjectByName(subjectNamePart);
+          if (!subject) continue;
+          const hasHomework = records('homework_diaries').some(row =>
+            row.class_id === klass.id && row.subject_id === subject.id && String(row.homework_date || '') === today);
+          if (hasHomework) continue;
+          const assignment = records('class_subjects').find(row => row.class_id === klass.id && row.subject_id === subject.id);
+          addPending(assignment?.teacher_id, `Homework not saved before 2:00 PM for ${className(klass.id)} · ${subjectName(subject.id)}`);
+        }
+      }
+    }
+  }
   const rows = [...missingByTeacher.entries()].map(([teacherId, items]) => {
     const teacher = records('teachers').find(row => row.id === teacherId);
     if (!teacher) return '';
@@ -1728,9 +1803,12 @@ const remindersView = () => {
       <td>${whatsapp ? `<a class="button button-outline button-small" href="${escapeHtml(whatsapp)}" target="_blank" rel="noopener">Send WhatsApp</a>` : '<span class="status-pill">No phone</span>'}</td>
     </tr>`;
   }).filter(Boolean);
-  return `${pageHeading('TEACHER REMINDERS', 'Teacher reminders', 'WhatsApp reminders for teachers with pending attendance or monthly-test marks.', '')}
+  const deadlineNote = deadlinePassed
+    ? 'Homework reminders include classes whose scheduled subjects were not saved before 2:00 PM Pakistan time.'
+    : 'Homework reminders will be generated after 2:00 PM Pakistan time for scheduled subjects without a saved homework diary.';
+  return `${pageHeading('TEACHER REMINDERS', 'Teacher reminders', 'WhatsApp reminders for teachers with pending attendance, monthly-test marks, or unsaved homework.', '')}
     ${!canManage ? '<div class="empty-state">Only administrators and developers can send reminders.</div>' : `
-      <div class="callout"><strong>Automatic reminders</strong> · Links open WhatsApp with a pre-filled message, app link, and homework area reference.</div>
+      <div class="callout"><strong>Automatic reminders</strong> · ${escapeHtml(deadlineNote)} Links open WhatsApp with a pre-filled message, app link, and homework area reference.</div>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Teacher</th><th>Pending items</th><th>WhatsApp</th></tr></thead><tbody>${rows.length ? rows.join('') : '<tr><td colspan="3"><div class="empty-state">No pending teacher reminders.</div></td></tr>'}</tbody></table></div>`}`;
 };
 
@@ -1905,6 +1983,7 @@ const remindersView = () => {
     const dialog = $('#recordDialog');
     dialog.dataset.table = table;
     dialog.dataset.id = row?.id || '';
+    dialog.classList.toggle('student-profile-dialog', table === 'students');
     if (table === 'students' && !row && state.studentDirectoryClass) {
       setTimeout(() => {
         const classField = $('#recordForm')?.elements?.namedItem('class_id');
