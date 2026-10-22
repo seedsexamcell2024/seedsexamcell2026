@@ -23,6 +23,7 @@
     search: '',
     classStrengthSearch: '',
     selectedLoginRole: 'admin',
+    loginMode: 'signin',
     currentSchoolId: '',
     imageUrls: {},
     accounts: [],
@@ -425,17 +426,49 @@
     $('#passwordInput').value = '';
   };
 
+  const normalizeMobile = raw => {
+    let digits = String(raw || '').replace(/\D/g, '');
+    if (digits.startsWith('0')) digits = '92' + digits.slice(1);
+    if (digits.length === 10 && digits.startsWith('3')) digits = '92' + digits;
+    if (digits.length === 11 && digits.startsWith('3')) digits = '92' + digits;
+    return digits;
+  };
+  const isValidPakistaniMobile = mobile => /^923[0-9]{9}$/.test(mobile);
+  const mobileToEmail = mobile => `${mobile}@seeds.local`;
+  const isRegisterMode = () => state.loginMode === 'register';
+
   const signIn = async event => {
     event.preventDefault();
     if (!isConfigured) {
       setLoginMessage('Supabase is not configured. Complete the setup steps in README.md before signing in.');
       return;
     }
-    const email = $('#emailInput').value.trim();
-    const password = $('#passwordInput').value;
-    if (!email || !password) return;
-    const submit = $('#loginForm button[type="submit"]');
+    const mobile = normalizeMobile($('#mobileInput').value);
+    if (!isValidPakistaniMobile(mobile)) {
+      setLoginMessage('Enter a valid Pakistani mobile number (e.g. 03XX XXXXXXX).');
+      return;
+    }
+    const submit = $('#loginSubmitButton');
     submit.disabled = true;
+    const email = mobileToEmail(mobile);
+    const password = mobile;
+    if (isRegisterMode()) {
+      const fullName = String($('#registerNameInput').value || '').trim();
+      if (fullName.length < 2) {
+        setLoginMessage('Enter your full name to create an account.');
+        submit.disabled = false;
+        return;
+      }
+      setLoginMessage('Creating your account…');
+      try {
+        await registerAccount({ mobile, full_name: fullName, role: state.selectedLoginRole });
+        setLoginMessage('Account created. Signing you in…');
+      } catch (error) {
+        setLoginMessage(error instanceof Error ? error.message : 'Could not create account.');
+        submit.disabled = false;
+        return;
+      }
+    }
     setLoginMessage('Signing in securely…');
     try {
       const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
@@ -444,7 +477,7 @@
         body: JSON.stringify({ email, password })
       });
       const auth = await response.json();
-      if (!response.ok) throw new Error(auth.msg || auth.message || 'Sign in failed. Check your email and password.');
+      if (!response.ok) throw new Error(auth.msg || auth.message || 'Sign in failed. Check your mobile number.');
       state.token = auth.access_token;
       state.user = auth.user;
       const profiles = await api(`profiles?id=eq.${encodeURIComponent(auth.user.id)}&select=*`);
@@ -466,7 +499,7 @@
       }
       openWorkspace(state.profile, auth.user, auth.access_token);
     } catch (error) {
-      state.token = '';
+      state.token = '' ;
       state.user = null;
       setLoginMessage(error instanceof Error ? error.message : 'Sign in failed.');
     } finally {
@@ -1280,6 +1313,16 @@
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || `Account management failed (${response.status}).`);
+    return result;
+  };
+  const registerAccount = async ({ mobile, full_name, role }) => {
+    const response = await fetch(`${supabaseUrl}/functions/v1/register-account`, {
+      method: 'POST',
+      headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mobile, full_name, role, school_id: state.currentSchoolId || null })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `Account creation failed (${response.status}).`);
     return result;
   };
 
@@ -2192,6 +2235,19 @@
         button.classList.toggle('selected', selected);
         button.setAttribute('aria-pressed', String(selected));
       });
+    });
+    const loginModeToggle = $('#loginModeToggle');
+    if (loginModeToggle) loginModeToggle.addEventListener('click', event => {
+      const btn = event.target.closest('[data-login-mode]');
+      if (!btn) return;
+      state.loginMode = btn.dataset.loginMode;
+      const register = state.loginMode === 'register';
+      $('#registerNameField').classList.toggle('hidden', !register);
+      $('#loginSubmitButton').innerHTML = register ? 'Create account <span aria-hidden="true">→</span>' : 'Sign in <span aria-hidden="true">→</span>';
+      document.querySelectorAll('[data-login-mode]').forEach(button => {
+        button.classList.toggle('selected', button === btn);
+      });
+      setLoginMessage('');
     });
     $('#schoolPicker').addEventListener('change', async event => {
       state.currentSchoolId = event.target.value;
