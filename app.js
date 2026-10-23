@@ -2631,7 +2631,7 @@ const remindersView = () => {
         state.attendanceRangeStart = event.target.value;
         state.attendanceRangeEnd = event.target.value;
       }
-      state.attendanceStatuses = {};
+      // Keep attendanceStatuses as-is — user may have individual marks for this date
       goToView('attendance');
       return;
     }
