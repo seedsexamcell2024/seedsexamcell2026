@@ -1015,7 +1015,8 @@
     const attendanceByStudent = new Map();
     for (const row of monthRecords) {
       if (!attendanceByStudent.has(row.student_id)) attendanceByStudent.set(row.student_id, new Map());
-      attendanceByStudent.get(row.student_id).set(Number(row.attendance_date.slice(-2)), row.status);
+      const dayMatch = row.attendance_date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      attendanceByStudent.get(row.student_id).set(dayMatch ? Number(dayMatch[3]) : NaN, row.status);
     }
     const statusCodes = { present: 'P', absent: 'A', leave: 'L', holiday: 'H' };
     const countsByDay = days.map(day => students.reduce((count, student) =>
