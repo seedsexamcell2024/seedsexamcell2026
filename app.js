@@ -3162,6 +3162,86 @@ const remindersView = () => {
     showToast(`Attendance saved and verified in database: ${students.length} students × ${dayCount} day${dayCount === 1 ? '' : 's'} = ${expectedCount} records.`);
   };
 
+  // NEW: Save monthly register function
+  const saveMonthlyAttendance = async () => {
+    if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) {
+      throw new Error('Your account is not allowed to record attendance.');
+    }
+    // Collect all student statuses from the monthly grid
+    const students = attendanceStudents();
+    if (!students.length) throw new Error('There are no students in the selected class.');
+    const [yearText, monthText] = state.attendanceMonth.split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const validMonth = /^\\d{4}-\\d{2}$/.test(state.attendanceMonth) && month >= 1 && month <= 12;
+    if (!validMonth) throw new Error('Select a valid month.');
+    // Get all dates in the month, excluding weekends
+    const dayCount = validMonth ? new Date(year, month, 0).getDate() : 0;
+    const days = Array.from({ length: dayCount }, (_, index) => {
+      const date = new Date(year, month - 1, index + 1);
+      return { number: index + 1, date, weekday: date.getDay(), weekend: date.getDay() === 0 || date.getDay() === 6, iso: `${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0') }` };
+    });
+    // Filter out weekend days - only Mon-Fri should have entries
+    const weekdayDays = days.filter(d => !d.weekend);
+    if (weekdayDays.length === 0) throw new Error('No weekdays in selected month.');
+    // Get the class filter
+    const selectedClass = records('classes').find(row => row.id === state.attendanceClass);
+    const permitted = new Set(permittedStudents());
+    const classStudents = students.filter(s => permitted.has(s.id) && (!selectedClass || s.class_id === selectedClass.id));
+    const studentIds = new Set(classStudents.map(s => s.id));
+    // Collect statuses from the DOM - each monthly-status-select element
+    const statusSelects = pageContent.querySelectorAll('.monthly-status-select');
+    const attendanceRecords = [];
+    // Track which (student, date) combinations have been set
+    const selectedStatuses = {};
+    // Iterate through all status selects
+    statusSelects.forEach(select => {
+      const dateStr = select.closest('td').dataset.date;
+      const weekend = select.closest('td').dataset.weekend;
+      if (!dateStr || weekend === 'true') return; // Skip weekends
+      const dateNumber = Number(dateStr.split('-')[2]); // Get day number
+      const studentId = select.closest('tr').querySelector('.monthly-student-cell')?.dataset?.studentId || '';
+      const status = select.value || 'present'; // Default to present
+      const key = `${studentId}-${dateNumber}`;
+      if (!selectedStatuses[key]) {
+        selectedStatuses[key] = status;
+        attendanceRecords.push({
+          student_id: studentId,
+          attendance_date: dateStr,
+          status: status,
+          school_id: state.currentSchoolId
+        });
+      }
+    });
+    if (!attendanceRecords.length) throw new Error('No attendance records to save.');
+    // Weekend validation: ensure no weekend dates were saved
+    for (const record of attendanceRecords) {
+      const recordDay = days.find(d => d.iso === record.attendance_date);
+      if (recordDay && recordDay.weekend) {
+        throw new Error(`Attendance cannot be saved for ${record.attendance_date} (${recordDay.weekday}). Weekends (Saturday and Sunday) are off; only Monday to Friday entries are allowed.`);
+      }
+    }
+    // Save in batches to Supabase
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < attendanceRecords.length; i += BATCH_SIZE) {
+      const batch = attendanceRecords.slice(i, i + BATCH_SIZE);
+      const { error } = await supabase
+        .from('attendance')
+        .insert(batch);
+      if (error) throw new Error(`Save error: ${error.message}`);
+    }
+    // Verification: count saved records
+    let savedCount = 0;
+    for (const day of weekdayDays) {
+      const { count } = await supabase.from('attendance').select('*', { count: 'exact', head: true }).attendance_date.eq(day.iso);
+      savedCount += (count || 0);
+    }
+    console.log(`[saveMonthlyAttendance] Verification: ${classStudents.length} students × ${weekdayDays.length} weekdays = ${classStudents.length * weekdayDays.length} possible records. DB records: ${savedCount}`);
+    state.attendanceStatuses = {};
+    goToView('attendance');
+    showToast(`Monthly attendance saved: ${classStudents.length} students × ${weekdayDays.length} days = ${classStudents.length * weekdayDays.length} records.`);
+  };
+
   const saveMarks = async () => {
     const assignment = records('class_subjects').find(row => row.id === state.assessmentAssignmentId);
     if (!assignment) throw new Error('Select a class and subject before saving marks.');
