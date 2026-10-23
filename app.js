@@ -3095,6 +3095,7 @@ const remindersView = () => {
       date.setDate(date.getDate() + offset);
       const attendanceDate = localDateISO(date);
       for (const student of students) {
+        // Use present as default, but if the student has a status override, use it
         const status = state.attendanceStatuses[student.id] || 'present';
         if (!validStatuses.has(status)) throw new Error('Select a valid attendance status for every student.');
         rows.push({
@@ -3107,11 +3108,40 @@ const remindersView = () => {
         });
       }
     }
+    // Remove any rows where status is not explicitly set for the specific date
+    // (statuses might have been changed since these students were marked)
+    const uniqueStudentIds = new Set(students.map(s => s.id));
+    const explicitStatuses = new Set(Object.keys(state.attendanceStatuses));
+    const refinedRows = rows.filter(row => explicitStatuses.has(row.student_id));
+    
+    if (refinedRows.length === 0) {
+      // No explicit statuses set - nothing to save (all will use 'present' default)
+      // But we still need to save the default 'present' status for each student
+      // Recreate rows with explicit 'present' status for all students
+      const newRows = [];
+      for (let offset = 0; offset < dayCount; offset++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + offset);
+        const attendanceDate = localDateISO(date);
+        for (const student of students) {
+          newRows.push({
+            student_id: student.id,
+            class_id: student.class_id,
+            ...(assignment ? { subject_id: assignment.subject_id } : {}),
+            attendance_date: attendanceDate,
+            status: 'present',
+            school_id: state.currentSchoolId
+          });
+        }
+      }
+      refinedRows.push(...newRows);
+    }
+
     const targetTable = assignment ? 'subject_attendance' : 'attendance';
-    for (let offset = 0; offset < rows.length; offset += 500) {
+    for (let offset = 0; offset < refinedRows.length; offset += 500) {
       await api(`${targetTable}?on_conflict=student_id,${assignment ? 'subject_id,' : ''}attendance_date`, {
         method: 'POST',
-        body: rows.slice(offset, offset + 500),
+        body: refinedRows.slice(offset, offset + 500),
         prefer: 'resolution=merge-duplicates,return=minimal'
       });
     }
