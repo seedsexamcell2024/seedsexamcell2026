@@ -3149,7 +3149,8 @@ const remindersView = () => {
       for (let offset = 0; offset < dayCount; offset++) {
         const date = new Date(startDate);
         date.setDate(date.getDate() + offset);
-        const attendanceDate = localDateISO(date);
+        // Use Pakistan timezone for consistent date representation
+        const attendanceDate = pakistanDateISO(date);
         for (const student of students) {
           newRows.push({
             student_id: student.id,
