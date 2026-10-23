@@ -3153,14 +3153,14 @@ const remindersView = () => {
         return rowDate >= start && rowDate <= end &&
           (assignment ? row.subject_id === assignment.subject_id : true);
       }).length;
-    const expectedCount = students.length * dayCount;
+    const expectedCount = refinedRows.length;
     if (savedCount < expectedCount) {
       throw new Error(`Attendance verification failed: expected ${expectedCount} records but found ${savedCount} in the database. Please try saving again.`);
     }
     console.log(`[saveAttendance] Verification passed: ${students.length} students × ${dayCount} day(s) = ${expectedCount} records. DB records found: ${savedCount}`);
     state.attendanceStatuses = {};
     goToView('attendance');
-    showToast(`Attendance saved and verified in database: ${students.length} students × ${dayCount} day${dayCount === 1 ? '' : 's'} = ${expectedCount} records.`);
+    showToast(`Attendance saved and verified in database: ${expectedCount} records saved.`);
   };
 
   const saveMarks = async () => {
