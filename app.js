@@ -326,7 +326,7 @@
       ['classes', await api(`classes?${schoolFilter}&order=name.asc&limit=10000`)],
       ['subjects', await api(`subjects?${schoolFilter}&order=name.asc&limit=10000`)],
       ['class_subjects', await api(`class_subjects?${schoolFilter}&limit=10000`)],
-      ['subject_enrollments', await api(`subject_enrollments?${schoolFilter}&order=subject_enrollment_id.asc&limit=10000`)],
+      ['subject_enrollments', await api(`subject_enrollments?${schoolFilter}&limit=10000`)],
       ['attendance', await api(`attendance?${schoolFilter}&order=attendance_date.asc&limit=10000`)],
       ['subject_attendance', await api(`subject_attendance?${schoolFilter}&order=subject_attendance_id.asc&limit=10000`)],
       ['assessments', await api(`assessments?${schoolFilter}&order=assessment_id.asc&limit=10000`)],
