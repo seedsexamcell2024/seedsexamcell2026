@@ -309,20 +309,20 @@
     // Load core tables; school_holidays may not exist yet until the Supabase schema cache is refreshed.
     const loaded = await Promise.all([
       ['schools', await api('schools?select=*')],
-      ['students', await api(`students?${schoolFilter}`)],
-      ['teachers', await api(`teachers?${schoolFilter}`)],
-      ['classes', await api(`classes?${schoolFilter}`)],
-      ['subjects', await api(`subjects?${schoolFilter}`)],
-      ['class_subjects', await api(`class_subjects?${schoolFilter}`)],
-      ['subject_enrollments', await api(`subject_enrollments?${schoolFilter}`)],
-      ['attendance', await api(`attendance?${schoolFilter}`)],
-      ['subject_attendance', await api(`subject_attendance?${schoolFilter}`)],
-      ['assessments', await api(`assessments?${schoolFilter}`)],
-      ['marks', await api(`marks?${schoolFilter}`)],
-      ['parent_students', await api(`parent_students?${schoolFilter}`)],
-      ['homework_diaries', await api(`homework_diaries?${schoolFilter}`)],
-      ['homework_receipts', await api(`homework_receipts?${schoolFilter}`)],
-      ['absentee_records', await api(`absentee_records?${schoolFilter}`)]
+      ['students', await api(`students?${schoolFilter}&order=student_id.asc&limit=10000`)],
+      ['teachers', await api(`teachers?${schoolFilter}&order=teacher_id.asc&limit=10000`)],
+      ['classes', await api(`classes?${schoolFilter}&order=class_id.asc&limit=10000`)],
+      ['subjects', await api(`subjects?${schoolFilter}&order=subject_id.asc&limit=10000`)],
+      ['class_subjects', await api(`class_subjects?${schoolFilter}&order=class_subject_id.asc&limit=10000`)],
+      ['subject_enrollments', await api(`subject_enrollments?${schoolFilter}&order=subject_enrollment_id.asc&limit=10000`)],
+      ['attendance', await api(`attendance?${schoolFilter}&order=attendance_date.asc&limit=10000`)],
+      ['subject_attendance', await api(`subject_attendance?${schoolFilter}&order=subject_attendance_id.asc&limit=10000`)],
+      ['assessments', await api(`assessments?${schoolFilter}&order=assessment_id.asc&limit=10000`)],
+      ['marks', await api(`marks?${schoolFilter}&order=mark_id.asc&limit=10000`)],
+      ['parent_students', await api(`parent_students?${schoolFilter}&order=parent_student_id.asc&limit=10000`)],
+      ['homework_diaries', await api(`homework_diaries?${schoolFilter}&order=homework_diary_id.asc&limit=10000`)],
+      ['homework_receipts', await api(`homework_receipts?${schoolFilter}&order=homework_receipt_id.asc&limit=10000`)],
+      ['absentee_records', await api(`absentee_records?${schoolFilter}&order=absentee_record_id.asc&limit=10000`)]
     ]);
     loaded.forEach(([table, rows]) => { state.data[table] = rows || []; });
     // school_holidays is optional until the Supabase schema cache is refreshed after deployment.
@@ -3137,6 +3137,30 @@ const remindersView = () => {
       }
       refinedRows.push(...newRows);
     }
+    
+    // Ensure ALL students are saved for the selected range.
+    // Students without explicit statuses must still be saved with 'present' (default).
+    // The filtered rows above only contain explicitly marked students when
+    // status changes occurred; we must include all students for full coverage.
+    const allRows = [];
+    for (let offset = 0; offset < dayCount; offset++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + offset);
+      const attendanceDate = localDateISO(date);
+      for (const student of students) {
+        const status = state.attendanceStatuses[student.id] || 'present';
+        if (!validStatuses.has(status)) throw new Error('Select a valid attendance status for every student.');
+        allRows.push({
+          student_id: student.id,
+          class_id: student.class_id,
+          ...(assignment ? { subject_id: assignment.subject_id } : {}),
+          attendance_date: attendanceDate,
+          status,
+          school_id: state.currentSchoolId
+        });
+      }
+    }
+    refinedRows.push(...allRows);
 
     const targetTable = assignment ? 'subject_attendance' : 'attendance';
     for (let offset = 0; offset < refinedRows.length; offset += 500) {
@@ -3158,6 +3182,7 @@ const remindersView = () => {
     if (savedCount < expectedCount) {
       throw new Error(`Attendance verification failed: expected ${expectedCount} records but found ${savedCount} in the database. Please try saving again.`);
     }
+    console.log(`[saveAttendance] Verification passed: ${students.length} students × ${dayCount} day(s) = ${expectedCount} records. DB records found: ${savedCount}`);
     goToView('attendance');
     showToast(`Attendance saved and verified in database: ${students.length} students × ${dayCount} day${dayCount === 1 ? '' : 's'} = ${expectedCount} records.`);
   };
