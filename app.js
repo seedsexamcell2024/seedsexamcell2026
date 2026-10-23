@@ -941,7 +941,7 @@
     ];
     const counts = statusOptions.map(status => ({
       ...status,
-      count: rows.filter(student => (state.attendanceStatuses[student.id] || attendanceIndex.get(student.id)?.status || 'present') === status.value).length
+      count: rows.filter(student => (state.attendanceStatuses[student.id] || attendanceIndex.get(student.id)?.status || undefined) === status.value).length
     }));
     const session = school.academic_year || String(new Date().getFullYear());
     const selectedName = state.attendanceClass
@@ -989,8 +989,8 @@
         <div class="attendance-list-header"><span>${assignment ? `${escapeHtml(subjectName(assignment.subject_id))} · ${escapeHtml(className(assignment.class_id))} students` : 'Class students · Daily marking mode'}</span><span>Status</span></div>
         ${rows.length ? rows.map((student, index) => {
           const attendanceRecord = attendanceIndex.get(student.id);
-          const status = state.attendanceStatuses[student.id] || attendanceRecord?.status || 'present';
-          const selectedStatus = statusOptions.find(option => option.value === status) || statusOptions[0];
+          const status = state.attendanceStatuses[student.id] || attendanceRecord?.status || undefined;
+          const selectedStatus = statusOptions.find(option => option.value === status) || { value: '', short: '', label: '—' };
           return `<article class="attendance-student-row ${canTakeAttendance ? 'editable' : ''}" data-row-student="${escapeHtml(student.id)}">
             <span class="attendance-row-number">#${index + 1}</span>
             <div class="attendance-student-photo">${photo(student, student.full_name.split(/\s+/).map(part => part[0]).slice(0, 2).join(''))}</div>
