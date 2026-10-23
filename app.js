@@ -8,6 +8,19 @@
     return localDateISO(date);
   };
   const localDateISO = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  // Pakistan timezone (Asia/Karachi, UTC+5) — all date operations use this timezone
+  // to ensure consistent date handling regardless of the user's browser timezone.
+  const pakistanDateISO = (date, usePSTOffset = true) => {
+    const d = new Date(date);
+    const offset = usePSTOffset ? 5 * 60 : 0;
+    d.setMinutes(d.getMinutes() + offset);
+    return localDateISO(d);
+  };
+  const pakistanTodayISO = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() + 5 * 60);
+    return localDateISO(d);
+  };
   const SCHOOL_NAME = 'SEEDS School of Excellence';
   const BRAND_LOGO = 'assets/seeds-logo.png';
   const config = window.SEEDS_CONFIG || {};
