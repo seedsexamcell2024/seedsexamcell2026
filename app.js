@@ -3341,17 +3341,23 @@ const remindersView = () => {
     if (configured) $('#modeBanner').classList.add('secure');
 
     $('#loginForm').addEventListener('submit', signIn);
+    // Sync initial button states with selectedLoginRole
+    const syncRoleButtons = () => {
+      document.querySelectorAll('[data-login-role]').forEach(button => {
+        const selected = button.dataset.loginRole === state.selectedLoginRole;
+        button.classList.toggle('selected', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+    };
     $('#loginRoleChoices').addEventListener('click', event => {
       const choice = event.target.closest('[data-login-role]');
       if (!choice) return;
       state.selectedLoginRole = choice.dataset.loginRole;
       setLoginMessage('');
-      document.querySelectorAll('[data-login-role]').forEach(button => {
-        const selected = button === choice;
-        button.classList.toggle('selected', selected);
-        button.setAttribute('aria-pressed', String(selected));
-      });
+      syncRoleButtons();
     });
+    // Initialize on load
+    if (!$('#loginRoleChoices'.classList.contains('hidden')) syncRoleButtons();
     const loginModeToggle = $('#loginModeToggle');
     if (loginModeToggle) loginModeToggle.addEventListener('click', event => {
       const btn = event.target.closest('[data-login-mode]');
