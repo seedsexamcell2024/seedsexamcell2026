@@ -3092,8 +3092,13 @@ const remindersView = () => {
     // the date range is calculated consistently regardless of browser TZ.
     const startDate = new Date(`${start}T12:00:00`);
     const endDate = new Date(`${end}T12:00:00`);
-    if (!start || !end || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) ||
-        localDateISO(startDate) !== start || localDateISO(endDate) !== end || endDate < startDate) {
+    if (!start || !end || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new Error('Choose a valid start and end date. The end date must not be before the start date.');
+    }
+    // Simple date string comparison for validation
+    const startDateISO = startDate.toISOString().split('T')[0];
+    const endDateISO = endDate.toISOString().split('T')[0];
+    if (startDateISO < start || endDateISO < end) {
       throw new Error('Choose a valid start and end date. The end date must not be before the start date.');
     }
     // Weekend restriction: Saturdays and Sundays are off; only Monday-Friday entries allowed.
