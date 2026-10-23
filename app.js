@@ -285,7 +285,8 @@
 
   const syncAbsenteeRecords = async () => {
     if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) return;
-    const reportDate = dateOffset(todayISO(), -1);
+    // Use Pakistan timezone for the report date to match school local time
+    const reportDate = pakistanDateISO(dateOffset(todayISO(), -1));
     const existing = new Set((records('absentee_records') || []).filter(row => row.report_date === reportDate).map(row => row.student_id));
     const rows = (records('attendance') || [])
       .filter(row => row.attendance_date === reportDate && row.status === 'absent')
@@ -926,7 +927,9 @@
     const calendarMonthLabel = new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(calendarBaseDate);
     const calendarDays = Array.from({ length: new Date(calendarYear, calendarMonth + 1, 0).getDate() }, (_, index) => {
       const dayDate = new Date(calendarYear, calendarMonth, index + 1);
-      return { number: index + 1, iso: localDateISO(dayDate), weekend: dayDate.getDay() === 0 || dayDate.getDay() === 6 };
+      // Use Pakistan timezone for calendar day ISO dates
+      const dayISO = pakistanDateISO(dayDate);
+      return { number: index + 1, iso: dayISO, weekend: dayDate.getDay() === 0 || dayDate.getDay() === 6 };
     });
     const calendarLeadingBlanks = new Date(calendarYear, calendarMonth, 1).getDay();
     const rangeLength = state.attendanceRangeMode && state.attendanceRangeStart && state.attendanceRangeEnd
