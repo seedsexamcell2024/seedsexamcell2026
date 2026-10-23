@@ -3343,12 +3343,15 @@ const remindersView = () => {
     $('#loginForm').addEventListener('submit', signIn);
     // Sync initial button states with selectedLoginRole
     const syncRoleButtons = () => {
-      document.querySelectorAll('[data-login-role]').forEach(button => {
+      const buttons = document.querySelectorAll('[data-login-role]');
+      buttons.forEach(button => {
         const selected = button.dataset.loginRole === state.selectedLoginRole;
         button.classList.toggle('selected', selected);
         button.setAttribute('aria-pressed', String(selected));
       });
     };
+    
+    // Attach role choice click handler
     $('#loginRoleChoices').addEventListener('click', event => {
       const choice = event.target.closest('[data-login-role]');
       if (!choice) return;
@@ -3356,8 +3359,15 @@ const remindersView = () => {
       setLoginMessage('');
       syncRoleButtons();
     });
-    // Initialize button states on load (if role choices are visible)
-    if ($('#loginRoleChoices') && !$('#loginRoleChoices').classList.contains('hidden')) syncRoleButtons();
+    
+    // Initialize button states - run after a brief delay to ensure DOM is ready
+    // and also on any subsequent role changes
+    setTimeout(() => {
+      const roleChoices = $('#loginRoleChoices');
+      if (roleChoices && !roleChoices.classList.contains('hidden')) {
+        syncRoleButtons();
+      }
+    }, 100);
     const loginModeToggle = $('#loginModeToggle');
     if (loginModeToggle) loginModeToggle.addEventListener('click', event => {
       const btn = event.target.closest('[data-login-mode]');
