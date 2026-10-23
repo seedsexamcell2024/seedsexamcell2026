@@ -577,7 +577,7 @@ button { cursor: pointer; }
   .ledger-control, .attendance-save-bar { align-items: flex-start; flex-direction: column; }
   .ledger-actions { width: 100%; flex-wrap: wrap; }
   .range-mode-toggle { margin-left: auto; }
-  .attendance-student-row { grid-template-columns: 22px 32px minmax(0, 1fr); gap: 8px; padding: 11px; }
+  .attendance-student-row { grid-template-columns: 22px 32px minmax(0, 1fr); gap: 8px; padding: 11px; height: 80px; }
   .attendance-status-choices { grid-column: 2 / -1; justify-content: flex-start; }
   .attendance-choice { min-width: 48px; }
   .attendance-choice { min-height: 44px; }
