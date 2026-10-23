@@ -35,7 +35,7 @@
     view: 'overview',
     search: '',
     classStrengthSearch: '',
-    selectedLoginRole: 'admin',
+    selectedLoginRole: 'developer',
     loginMode: 'signin',
     currentSchoolId: '',
     imageUrls: {},
