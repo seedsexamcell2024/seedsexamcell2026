@@ -2386,6 +2386,7 @@ const remindersView = () => {
       date.setDate(date.getDate() + Number(dateStep.dataset.dateStep));
       // Use Pakistan timezone for consistent date representation
       state.attendanceDate = pakistanDateISO(date);
+      state.attendanceStatuses = {};
       goToView('attendance');
       return;
     }
@@ -3131,59 +3132,9 @@ const remindersView = () => {
         });
       }
     }
-    // Remove any rows where status is not explicitly set for the specific date
-    // (statuses might have been changed since these students were marked)
-    const explicitStatuses = new Set(Object.keys(state.attendanceStatuses));
-    const refinedRows = rows.filter(row => explicitStatuses.has(row.student_id));
-    
-    if (refinedRows.length === 0) {
-      // No explicit statuses set - nothing to save (all will use 'present' default)
-      // But we still need to save the default 'present' status for each student
-      // Recreate rows with explicit 'present' status for all students
-      const newRows = [];
-      for (let offset = 0; offset < dayCount; offset++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + offset);
-        // Use Pakistan timezone for consistent date representation
-        const attendanceDate = pakistanDateISO(date);
-        for (const student of students) {
-          newRows.push({
-            student_id: student.id,
-            class_id: student.class_id,
-            ...(assignment ? { subject_id: assignment.subject_id } : {}),
-            attendance_date: attendanceDate,
-            status: 'present',
-            school_id: state.currentSchoolId
-          });
-        }
-      }
-      refinedRows.push(...newRows);
-    }
-    
-    // Ensure ALL students are saved for the selected range.
-    // Students without explicit statuses must still be saved with 'present' (default).
-    // The filtered rows above only contain explicitly marked students when
-    // status changes occurred; we must include all students for full coverage.
-    const allRows = [];
-    for (let offset = 0; offset < dayCount; offset++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + offset);
-      // Use Pakistan timezone for consistent date representation
-      const attendanceDate = pakistanDateISO(date);
-      for (const student of students) {
-        const status = state.attendanceStatuses[student.id] || 'present';
-        if (!validStatuses.has(status)) throw new Error('Select a valid attendance status for every student.');
-        allRows.push({
-          student_id: student.id,
-          class_id: student.class_id,
-          ...(assignment ? { subject_id: assignment.subject_id } : {}),
-          attendance_date: attendanceDate,
-          status,
-          school_id: state.currentSchoolId
-        });
-      }
-    }
-    refinedRows.push(...allRows);
+    // All rows already contain every student for every date with the correct status
+    // (from state.attendanceStatuses or 'present' default). No filtering or duplication needed.
+    const refinedRows = rows;
 
     const targetTable = assignment ? 'subject_attendance' : 'attendance';
     for (let offset = 0; offset < refinedRows.length; offset += 500) {
