@@ -2401,6 +2401,7 @@ const remindersView = () => {
       state.attendanceDate = clickedDate;
       state.attendanceRangeStart = state.attendanceDate;
       state.attendanceRangeEnd = state.attendanceDate;
+      state.attendanceStatuses = {};
       goToView('attendance');
       return;
     }
