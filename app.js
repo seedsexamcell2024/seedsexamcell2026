@@ -333,8 +333,8 @@
       ['marks', await api(`marks?${schoolFilter}&limit=10000`)],
       ['parent_students', await api(`parent_students?${schoolFilter}&limit=10000`)],
       ['homework_diaries', await api(`homework_diaries?${schoolFilter}&limit=10000`)],
-      ['homework_receipts', await api(`homework_receipts?${schoolFilter}&order=homework_receipt_id.asc&limit=10000`)],
-      ['absentee_records', await api(`absentee_records?${schoolFilter}&order=absentee_record_id.asc&limit=10000`)]
+      ['homework_receipts', await api(`homework_receipts?${schoolFilter}&limit=10000`)],
+      ['absentee_records', await api(`absentee_records?${schoolFilter}&limit=10000`)]
     ]);
     loaded.forEach(([table, rows]) => { state.data[table] = rows || []; });
     // school_holidays is optional until the Supabase schema cache is refreshed after deployment.
