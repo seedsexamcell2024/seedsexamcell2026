@@ -332,7 +332,7 @@
       ['assessments', await api(`assessments?${schoolFilter}&order=name.asc&limit=10000`)],
       ['marks', await api(`marks?${schoolFilter}&limit=10000`)],
       ['parent_students', await api(`parent_students?${schoolFilter}&limit=10000`)],
-      ['homework_diaries', await api(`homework_diaries?${schoolFilter}&order=homework_diary_id.asc&limit=10000`)],
+      ['homework_diaries', await api(`homework_diaries?${schoolFilter}&limit=10000`)],
       ['homework_receipts', await api(`homework_receipts?${schoolFilter}&order=homework_receipt_id.asc&limit=10000`)],
       ['absentee_records', await api(`absentee_records?${schoolFilter}&order=absentee_record_id.asc&limit=10000`)]
     ]);
