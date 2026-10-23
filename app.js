@@ -3119,8 +3119,9 @@ const remindersView = () => {
       // Use the date as-is for saving
       const attendanceDate = date.toISOString().split('T')[0];
       for (const student of students) {
-        // Use present as default, but if the student has a status override, use it
-        const status = state.attendanceStatuses[student.id] || 'present';
+        // Use student's explicit status from state.attendanceStatuses, otherwise skip
+        const status = state.attendanceStatuses[student.id];
+        if (!status) continue; // Skip students without explicit status
         if (!validStatuses.has(status)) throw new Error('Select a valid attendance status for every student.');
         rows.push({
           student_id: student.id,
