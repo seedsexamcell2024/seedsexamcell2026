@@ -3388,18 +3388,6 @@ const remindersView = () => {
     };
     syncRoleButtons();
 
-    // Attach role choice click handler
-        buttons.forEach(button => {
-          const selected = button.dataset.loginRole === state.selectedLoginRole;
-          button.classList.toggle('selected', selected);
-          button.setAttribute('aria-pressed', String(selected));
-        });
-      } catch (e) {
-        console.error('Error syncing role buttons:', e);
-      }
-    };
-    
-    // Attach role choice click handler
     const roleChoicesEl = $('#loginRoleChoices');
     if (roleChoicesEl) {
       roleChoicesEl.addEventListener('click', event => {
