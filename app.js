@@ -3356,8 +3356,8 @@ const remindersView = () => {
       setLoginMessage('');
       syncRoleButtons();
     });
-    // Initialize on load
-    if (!$('#loginRoleChoices'.classList.contains('hidden')) syncRoleButtons();
+    // Initialize button states on load (if role choices are visible)
+    if ($('#loginRoleChoices') && !$('#loginRoleChoices').classList.contains('hidden')) syncRoleButtons();
     const loginModeToggle = $('#loginModeToggle');
     if (loginModeToggle) loginModeToggle.addEventListener('click', event => {
       const btn = event.target.closest('[data-login-mode]');
