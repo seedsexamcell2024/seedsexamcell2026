@@ -3088,12 +3088,10 @@ const remindersView = () => {
     if (!students.length) throw new Error('There are no students in the selected class.');
     const start = state.attendanceRangeMode ? state.attendanceRangeStart : state.attendanceDate;
     const end = state.attendanceRangeMode ? state.attendanceRangeEnd : state.attendanceDate;
-    // Parse dates in Pakistan timezone (Asia/Karachi, UTC+5) to ensure
+    // Parse dates as-is (no Pakistan timezone offset)
     // the date range is calculated consistently regardless of browser TZ.
     const startDate = new Date(`${start}T12:00:00`);
-    startDate.setMinutes(startDate.getMinutes() + 5 * 60);
     const endDate = new Date(`${end}T12:00:00`);
-    endDate.setMinutes(endDate.getMinutes() + 5 * 60);
     if (!start || !end || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) ||
         localDateISO(startDate) !== start || localDateISO(endDate) !== end || endDate < startDate) {
       throw new Error('Choose a valid start and end date. The end date must not be before the start date.');
