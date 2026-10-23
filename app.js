@@ -2418,6 +2418,7 @@ const remindersView = () => {
       state.attendanceDate = pakistanDateISO(next);
       state.attendanceRangeStart = state.attendanceDate;
       state.attendanceRangeEnd = state.attendanceDate;
+      state.attendanceStatuses = {};
       goToView('attendance');
       return;
     }
@@ -2647,11 +2648,11 @@ const remindersView = () => {
     }
     if (event.target.id === 'attendanceDate') {
       state.attendanceDate = event.target.value;
+      state.attendanceStatuses = {};
       if (!state.attendanceRangeMode) {
         state.attendanceRangeStart = event.target.value;
         state.attendanceRangeEnd = event.target.value;
       }
-      // Keep attendanceStatuses as-is — user may have individual marks for this date
       goToView('attendance');
       return;
     }
