@@ -3164,7 +3164,8 @@ const remindersView = () => {
     for (let offset = 0; offset < dayCount; offset++) {
       const date = new Date(startDate);
       date.setDate(date.getDate() + offset);
-      const attendanceDate = localDateISO(date);
+      // Use Pakistan timezone for consistent date representation
+      const attendanceDate = pakistanDateISO(date);
       for (const student of students) {
         const status = state.attendanceStatuses[student.id] || 'present';
         if (!validStatuses.has(status)) throw new Error('Select a valid attendance status for every student.');
