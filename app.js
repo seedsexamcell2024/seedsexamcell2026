@@ -2389,7 +2389,8 @@ const remindersView = () => {
     if (dateStep) {
       const date = new Date(`${state.attendanceDate}T12:00:00`);
       date.setDate(date.getDate() + Number(dateStep.dataset.dateStep));
-      state.attendanceDate = localDateISO(date);
+      // Use Pakistan timezone for consistent date representation
+      state.attendanceDate = pakistanDateISO(date);
       goToView('attendance');
       return;
     }
@@ -2416,7 +2417,8 @@ const remindersView = () => {
       const maxDay = new Date(targetYear, normalizedMonth + 1, 0).getDate();
       const day = Math.min(current.getDate() || 1, maxDay);
       const next = new Date(targetYear, normalizedMonth, day, 12);
-      state.attendanceDate = localDateISO(next);
+      // Use Pakistan timezone for consistent date representation
+      state.attendanceDate = pakistanDateISO(next);
       state.attendanceRangeStart = state.attendanceDate;
       state.attendanceRangeEnd = state.attendanceDate;
       goToView('attendance');
