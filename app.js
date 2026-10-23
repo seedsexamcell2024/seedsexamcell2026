@@ -899,7 +899,7 @@
 
   const attendanceView = () => {
     const school = currentSchool();
-    if (state.attendanceViewMode === 'monthly') return monthlyAttendanceView(school);
+    if (state.attendanceViewMode === 'monthly') return monthlyAttendanceView(school, state.attendanceMonth);
     const assignment = attendanceAssignment();
     const classIds = state.profile.role === 'teacher'
       ? new Set(records('class_subjects').filter(row => row.teacher_id === state.profile.teacher_id).map(row => row.class_id))
