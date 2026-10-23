@@ -200,11 +200,6 @@
   const studentName = id => records('students').find(row => row.id === id)?.full_name || 'Unknown student';
   const assessmentName = id => records('assessments').find(row => row.id === id)?.title || 'Assessment';
 
-  const pakistanDateISO = () => {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi' }).formatToParts(new Date());
-    const get = type => parts.find(part => part.type === type)?.value || '';
-    return `${get('year')}-${get('month')}-${get('day')}`;
-  };
   const pakistanTimeMinutes = () => {
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date());
     const hour = Number(parts.find(part => part.type === 'hour')?.value || '0');
