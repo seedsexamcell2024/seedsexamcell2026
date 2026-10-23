@@ -329,7 +329,7 @@
       ['subject_enrollments', await api(`subject_enrollments?${schoolFilter}&limit=10000`)],
       ['attendance', await api(`attendance?${schoolFilter}&limit=10000`)],
       ['subject_attendance', await api(`subject_attendance?${schoolFilter}&limit=10000`)],
-      ['assessments', await api(`assessments?${schoolFilter}&order=assessment_id.asc&limit=10000`)],
+      ['assessments', await api(`assessments?${schoolFilter}&order=name.asc&limit=10000`)],
       ['marks', await api(`marks?${schoolFilter}&order=mark_id.asc&limit=10000`)],
       ['parent_students', await api(`parent_students?${schoolFilter}&order=parent_student_id.asc&limit=10000`)],
       ['homework_diaries', await api(`homework_diaries?${schoolFilter}&order=homework_diary_id.asc&limit=10000`)],
