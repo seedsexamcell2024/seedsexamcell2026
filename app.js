@@ -3343,29 +3343,44 @@ const remindersView = () => {
     $('#loginForm').addEventListener('submit', signIn);
     // Sync initial button states with selectedLoginRole
     const syncRoleButtons = () => {
-      const buttons = document.querySelectorAll('[data-login-role]');
-      buttons.forEach(button => {
-        const selected = button.dataset.loginRole === state.selectedLoginRole;
-        button.classList.toggle('selected', selected);
-        button.setAttribute('aria-pressed', String(selected));
-      });
+      try {
+        const buttons = document.querySelectorAll('[data-login-role]');
+        buttons.forEach(button => {
+          const selected = button.dataset.loginRole === state.selectedLoginRole;
+          button.classList.toggle('selected', selected);
+          button.setAttribute('aria-pressed', String(selected));
+        });
+      } catch (e) {
+        console.error('Error syncing role buttons:', e);
+      }
     };
     
     // Attach role choice click handler
-    $('#loginRoleChoices').addEventListener('click', event => {
-      const choice = event.target.closest('[data-login-role]');
-      if (!choice) return;
-      state.selectedLoginRole = choice.dataset.loginRole;
-      setLoginMessage('');
-      syncRoleButtons();
-    });
+    const roleChoicesEl = $('#loginRoleChoices');
+    if (roleChoicesEl) {
+      roleChoicesEl.addEventListener('click', event => {
+        try {
+          const choice = event.target.closest('[data-login-role]');
+          if (!choice) return;
+          state.selectedLoginRole = choice.dataset.loginRole;
+          setLoginMessage('');
+          syncRoleButtons();
+        } catch (e) {
+          console.error('Error handling role choice click:', e);
+        }
+      });
+    }
     
     // Initialize button states - run after a brief delay to ensure DOM is ready
     // and also on any subsequent role changes
     setTimeout(() => {
-      const roleChoices = $('#loginRoleChoices');
-      if (roleChoices && !roleChoices.classList.contains('hidden')) {
-        syncRoleButtons();
+      try {
+        const roleChoices = $('#loginRoleChoices');
+        if (roleChoices && !roleChoices.classList.contains('hidden')) {
+          syncRoleButtons();
+        }
+      } catch (e) {
+        console.error('Error initializing role buttons:', e);
       }
     }, 100);
     const loginModeToggle = $('#loginModeToggle');
