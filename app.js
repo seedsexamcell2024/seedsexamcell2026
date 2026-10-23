@@ -3118,8 +3118,8 @@ const remindersView = () => {
     for (let offset = 0; offset < dayCount; offset++) {
       const date = new Date(startDate);
       date.setDate(date.getDate() + offset);
-      // Use Pakistan timezone for consistent date representation
-      const attendanceDate = pakistanDateISO(date);
+      // Use the date as-is for saving
+      const attendanceDate = date.toISOString().split('T')[0];
       for (const student of students) {
         // Use present as default, but if the student has a status override, use it
         const status = state.attendanceStatuses[student.id] || 'present';
