@@ -279,7 +279,9 @@
     return body ? JSON.parse(body) : null;
   };
   const dateOffset = (iso, days) => {
+    // Parse in Pakistan timezone (IST, UTC+5) for consistent date arithmetic
     const date = new Date(`${iso}T12:00:00`);
+    date.setMinutes(date.getMinutes() + 5 * 60);
     date.setDate(date.getDate() + days);
     return date.toISOString().slice(0, 10);
   };
