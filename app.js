@@ -48,17 +48,17 @@
     assessmentShowWholeClass: false,
     assessmentEnrollOpen: false,
     // Use Pakistan timezone (IST, UTC+5) for default dates
-    attendanceDate: pakistanTodayISO(),
+    attendanceDate: todayISO(),
     attendanceClass: '',
-    absenteeDate: pakistanTodayISO(),
+    absenteeDate: todayISO(),
     studentDirectoryClass: '',
     attendanceAssignmentId: '',
     attendanceRangeMode: false,
-    attendanceRangeStart: pakistanTodayISO(),
-    attendanceRangeEnd: pakistanTodayISO(),
+    attendanceRangeStart: todayISO(),
+    attendanceRangeEnd: todayISO(),
     attendanceStatuses: {},
     attendanceViewMode: 'daily',
-    attendanceMonth: pakistanTodayISO().slice(0, 7),
+    attendanceMonth: todayISO().slice(0, 7),
     attendancePrintOrientation: 'landscape',
     reportCardScope: 'monthly',
     reportCardTerm: '1st Term',
@@ -925,8 +925,8 @@
     const calendarMonthLabel = new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(calendarBaseDate);
     const calendarDays = Array.from({ length: new Date(calendarYear, calendarMonth + 1, 0).getDate() }, (_, index) => {
       const dayDate = new Date(calendarYear, calendarMonth, index + 1);
-      // Use Pakistan timezone for calendar day ISO dates
-      const dayISO = pakistanDateISO(dayDate);
+      // Use the date as-is for calendar day ISO dates
+      const dayISO = localDateISO(dayDate);
       return { number: index + 1, iso: dayISO, weekend: dayDate.getDay() === 0 || dayDate.getDay() === 6 };
     });
     const calendarLeadingBlanks = new Date(calendarYear, calendarMonth, 1).getDay();
