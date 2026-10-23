@@ -3095,13 +3095,8 @@ const remindersView = () => {
     if (!start || !end || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       throw new Error('Choose a valid start and end date. The end date must not be before the start date.');
     }
-    // Simple date string comparison for validation
-    const startDateISO = startDate.toISOString().split('T')[0];
-    const endDateISO = endDate.toISOString().split('T')[0];
-    if (startDateISO < start || endDateISO < end) {
-      throw new Error('Choose a valid start and end date. The end date must not be before the start date.');
-    }
     // Weekend restriction: Saturdays and Sundays are off; only Monday-Friday entries allowed.
+    // Check each day in the range for weekend days
     for (let offset = 0; offset <= Math.round((endDate - startDate) / 86400000); offset++) {
       const checkDate = new Date(startDate);
       checkDate.setDate(checkDate.getDate() + offset);
