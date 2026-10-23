@@ -3110,7 +3110,6 @@ const remindersView = () => {
     }
     // Remove any rows where status is not explicitly set for the specific date
     // (statuses might have been changed since these students were marked)
-    const uniqueStudentIds = new Set(students.map(s => s.id));
     const explicitStatuses = new Set(Object.keys(state.attendanceStatuses));
     const refinedRows = rows.filter(row => explicitStatuses.has(row.student_id));
     
