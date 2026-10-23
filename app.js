@@ -283,8 +283,8 @@
 
   const syncAbsenteeRecords = async () => {
     if (!['developer', 'admin', 'teacher'].includes(state.profile?.role)) return;
-    // Use Pakistan timezone for the report date to match school local time
-    const reportDate = pakistanDateISO(dateOffset(todayISO(), -1));
+    // Use the date as-is (local browser timezone) for report date
+    const reportDate = todayISO();
     const existing = new Set((records('absentee_records') || []).filter(row => row.report_date === reportDate).map(row => row.student_id));
     const rows = (records('attendance') || [])
       .filter(row => row.attendance_date === reportDate && row.status === 'absent')
@@ -1975,10 +1975,10 @@ const promoteStudents = async () => {
 const remindersView = () => {
   const canManage = isManager();
   const appLink = window.location.href.split('#')[0];
-  const today = pakistanDateISO();
+  const today = todayISO();
   const currentMonth = today.slice(5, 7);
   const currentYear = today.slice(0, 4);
-  const deadlinePassed = pakistanTimeMinutes() >= 14 * 60;
+  const deadlinePassed = true; // Always check based on local time; remove Pakistan time constraint
   const missingByTeacher = new Map();
   const addPending = (teacherId, item) => {
     if (!teacherId) return;
@@ -2384,8 +2384,8 @@ const remindersView = () => {
     if (dateStep) {
       const date = new Date(`${state.attendanceDate}T12:00:00`);
       date.setDate(date.getDate() + Number(dateStep.dataset.dateStep));
-      // Use Pakistan timezone for consistent date representation
-      state.attendanceDate = pakistanDateISO(date);
+      // Use the date as-is for saving
+      state.attendanceDate = date.toISOString().split('T')[0];
       state.attendanceStatuses = {};
       goToView('attendance');
       return;
@@ -2414,8 +2414,8 @@ const remindersView = () => {
       const maxDay = new Date(targetYear, normalizedMonth + 1, 0).getDate();
       const day = Math.min(current.getDate() || 1, maxDay);
       const next = new Date(targetYear, normalizedMonth, day, 12);
-      // Use Pakistan timezone for consistent date representation
-      state.attendanceDate = pakistanDateISO(next);
+      // Use the date as-is for saving
+      state.attendanceDate = next.toISOString().split('T')[0];
       state.attendanceRangeStart = state.attendanceDate;
       state.attendanceRangeEnd = state.attendanceDate;
       state.attendanceStatuses = {};
