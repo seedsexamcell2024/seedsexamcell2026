@@ -1109,6 +1109,11 @@
         <footer class="monthly-signatures"><div><span></span><strong>Class Teacher Signature</strong><small>DATE: __________________</small></div><div><span></span><strong>Principal Signature</strong><small>DATE: __________________</small></div></footer>
       </div>
     </section>`;
+<div class="monthly-save-bar">
+          <button type="button" class="button button-primary" onclick="saveMonthlyAttendance()">Save Monthly Register</button>
+          <span class="attendance-total">· Monthly sheet</span>
+        </div>
+
   };
 
   const gradebookAssignments = () => {
