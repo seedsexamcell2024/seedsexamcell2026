@@ -3387,9 +3387,8 @@ const remindersView = () => {
       }
     };
     syncRoleButtons();
-    const syncRoleButtons = () => {
-      try {
-        const buttons = document.querySelectorAll('[data-login-role]');
+
+    // Attach role choice click handler
         buttons.forEach(button => {
           const selected = button.dataset.loginRole === state.selectedLoginRole;
           button.classList.toggle('selected', selected);
