@@ -3119,9 +3119,8 @@ const remindersView = () => {
       // Use the date as-is for saving
       const attendanceDate = date.toISOString().split('T')[0];
       for (const student of students) {
-        // Use student's explicit status from state.attendanceStatuses, otherwise skip
-        const status = state.attendanceStatuses[student.id];
-        if (!status) continue; // Skip students without explicit status
+        // Use present as default, but if the student has a status override, use it
+        const status = state.attendanceStatuses[student.id] || 'present';
         if (!validStatuses.has(status)) throw new Error('Select a valid attendance status for every student.');
         rows.push({
           student_id: student.id,
@@ -3153,14 +3152,14 @@ const remindersView = () => {
         return rowDate >= start && rowDate <= end &&
           (assignment ? row.subject_id === assignment.subject_id : true);
       }).length;
-    const expectedCount = refinedRows.length;
+    const expectedCount = students.length * dayCount;
     if (savedCount < expectedCount) {
       throw new Error(`Attendance verification failed: expected ${expectedCount} records but found ${savedCount} in the database. Please try saving again.`);
     }
     console.log(`[saveAttendance] Verification passed: ${students.length} students × ${dayCount} day(s) = ${expectedCount} records. DB records found: ${savedCount}`);
     state.attendanceStatuses = {};
     goToView('attendance');
-    showToast(`Attendance saved and verified in database: ${expectedCount} records saved.`);
+    showToast(`Attendance saved and verified in database: ${students.length} students × ${dayCount} day${dayCount === 1 ? '' : 's'} = ${expectedCount} records.`);
   };
 
   const saveMarks = async () => {
