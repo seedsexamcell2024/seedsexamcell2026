@@ -88,6 +88,60 @@ const populateStudentClassDropdown = async () => {
             const option = document.createElement('option');
             option.value = cls.id;
             option.textContent = `${cls.name} (Section ${cls.section || 'A'})`;
+// NEW: Set up event listeners for 4-account sign-in interface
+const setupAccountSigninListeners = () => {
+    // Developer Account sign-in
+    const devSignInBtn = document.querySelector('.developer-card .signin-btn');
+    if (devSignInBtn) {
+        devSignInBtn.addEventListener('click', () => {
+            const passkey = document.getElementById('devPasskey').value;
+            handleAccountSignIn('developer', passkey);
+        });
+    }
+
+    // Administrator Account sign-in
+    const adminSignInBtn = document.querySelector('.admin-card .signin-btn');
+    if (adminSignInBtn) {
+        adminSignInBtn.addEventListener('click', () => {
+            const passkey = document.getElementById('adminPasskey').value;
+            handleAccountSignIn('admin', passkey);
+        });
+    }
+
+    // Teacher Account sign-in
+    const teacherSignInBtn = document.querySelector('.teacher-card .signin-btn');
+    if (teacherSignInBtn) {
+        teacherSignInBtn.addEventListener('click', () => {
+            const passkey = document.getElementById('teacherPasskey').value;
+            handleAccountSignIn('teacher', passkey);
+        });
+    }
+
+    // Student Verify & Sign In
+    const studentSignInBtn = document.getElementById('verifyStudentBtn');
+    if (studentSignInBtn) {
+        studentSignInBtn.addEventListener('click', async () => {
+            const classId = studentClassSelect.value;
+            const rollNo = studentRollNo.value;
+            const name = studentNameInput.value;
+            
+            if (!classId || !rollNo || !name) {
+                setLoginMessage('Please select a class, enter roll no and name.');
+                return;
+            }
+            
+            const valid = await validateStudentCredentials(classId, rollNo, name);
+            if (valid) {
+                // Sign in as student - navigate to student workspace
+                state.selectedLoginRole = 'student';
+                setLoginMessage('Student signed in successfully.');
+                goToView('students');
+            } else {
+                setLoginMessage('Invalid roll no or name. Please verify your credentials.');
+            }
+        });
+    }
+};
             classSelect.appendChild(option);
         });
     }
