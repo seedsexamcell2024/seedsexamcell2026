@@ -19,6 +19,54 @@
         <h1>Better learning starts with clarity.</h1>
         <p class="login-copy">Attendance, assessments, and academic progress in one secure place.</p>
         <div id="modeBanner" class="mode-banner"></div>
+<!-- NEW: 4 Account Sign-In Interface -->
+        <div id="accountSignin" class="account-signin-container hidden">
+          <p class="field-label">Select Account Type & Sign In</p>
+          <div class="account-grid">
+            <!-- Developer Account -->
+            <div class="account-card developer-card" data-account="developer">
+              <div class="account-icon">👨‍💻</div>
+              <h3>Developer Account</h3>
+              <p class="passkey-label">Passkey: <strong>developer</strong></p>
+              <input type="text" id="devPasskey" class="passkey-input" value="developer" readonly>
+              <button class="signin-btn" data-role="developer">Sign In</button>
+            </div>
+            
+            <!-- Administrator Account -->
+            <div class="account-card admin-card" data-account="admin">
+              <div class="account-icon">👔</div>
+              <h3>Administrator Account</h3>
+              <p class="passkey-label">Passkey: <strong>admin</strong></p>
+              <input type="text" id="adminPasskey" class="passkey-input" value="admin" readonly>
+              <button class="signin-btn" data-role="admin">Sign In</button>
+            </div>
+            
+            <!-- Teacher Account -->
+            <div class="account-card teacher-card" data-account="teacher">
+              <div class="account-icon">👨‍🏫</div>
+              <h3>Teacher Account</h3>
+              <p class="passkey-label">Passkey: <strong>staff</strong></p>
+              <input type="text" id="teacherPasskey" class="passkey-input" value="staff" readonly>
+              <button class="signin-btn" data-role="teacher">Sign In</button>
+            </div>
+            
+            <!-- Student Account -->
+            <div class="account-card student-card" data-account="student">
+              <div class="account-icon">👨‍🎓</div>
+              <h3>Student Account</h3>
+              <div class="student-info-section">
+                <label>Student Class: <select id="studentClassSelect" class="student-dropdown"></select></label>
+                <label>Roll No: <input type="text" id="studentRollNo" class="student-roll-input" placeholder="Enter roll no"></label>
+                <label>Name: <input type="text" id="studentNameInput" class="student-name-input" placeholder="Enter name"></label>
+              </div>
+              <button class="signin-btn" id="verifyStudentBtn">Verify & Sign In</button>
+              <p class="student-instructions">
+                Enter correct roll no, select your name from list, then sign in<br>
+                You'll see: test marks, homework assignments, monthly attendance
+              </p>
+            </div>
+          </div>
+        </div>
         <div id="loginRoleChoices" class="login-role-choices" aria-label="Choose account type">
           <p class="field-label">Choose your account type</p>
           <div class="role-choice-grid">
