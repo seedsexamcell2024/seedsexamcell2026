@@ -51,6 +51,10 @@
     assessmentEnrollOpen: false,
     // Use Pakistan timezone (IST, UTC+5) for default dates
     attendanceDate: todayISO(),
+};
+
+// NEW: Show the new 4-account sign-in interface on page load
+showAccountSigninInterface();
 
 // NEW: Passkey definitions - only developer can change these
 const passkeyDefinitions = {
