@@ -80,6 +80,7 @@ let studentClassData = {};
 // NEW: Show the new 4-account sign-in interface
 const showAccountSigninInterface = () => {
     loginRoleChoices.style.display = 'none';
+    accountSignin.classList.remove('hidden');
     accountSignin.style.display = 'block';
     loginForm.style.display = 'none';
     populateStudentClassDropdown();
@@ -88,7 +89,7 @@ const showAccountSigninInterface = () => {
 // NEW: Populate student class dropdown
 const populateStudentClassDropdown = async () => {
     const classes = await api('classes', { method: 'GET' });
-    const classSelect = studentClassSelect;
+    const classSelect = document.getElementById('studentClassSelect');
     classSelect.innerHTML = '<option value="">Select Class</option>';
     if (classes && classes.length > 0) {
         classes.forEach(cls => {
