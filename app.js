@@ -36,6 +36,8 @@
     search: '',
     classStrengthSearch: '',
     selectedLoginRole: 'developer',
+    // Ensure developer is always selectable on page load
+    forceDeveloperSelect: true,
     loginMode: 'signin',
     currentSchoolId: '',
     imageUrls: {},
@@ -49,6 +51,18 @@
     assessmentEnrollOpen: false,
     // Use Pakistan timezone (IST, UTC+5) for default dates
     attendanceDate: todayISO(),
+
+// Auto-select Developer role on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Force Developer button selection
+    const devBtn = document.querySelector('[data-login-role="developer"]');
+    if (devBtn) {
+        devBtn.classList.add('selected');
+        devBtn.setAttribute('aria-pressed', 'true');
+    }
+    // Update state
+    state.selectedLoginRole = 'developer';
+});
     attendanceClass: '',
     absenteeDate: todayISO(),
     studentDirectoryClass: '',
