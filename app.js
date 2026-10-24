@@ -56,6 +56,9 @@
 // NEW: Show the new 4-account sign-in interface on page load
 showAccountSigninInterface();
 
+// NEW: Set up event listeners for 4-account sign-in interface on page load
+setupAccountSigninListeners();
+
 // NEW: Passkey definitions - only developer can change these
 const passkeyDefinitions = {
     developer: { passkey: "developer", role: "developer", changeableBy: ["developer"] },
