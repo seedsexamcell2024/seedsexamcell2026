@@ -79,9 +79,12 @@ let studentClassData = {};
 
 // NEW: Show the new 4-account sign-in interface
 const showAccountSigninInterface = () => {
+    loginRoleChoices = document.getElementById('loginRoleChoices');
     loginRoleChoices.style.display = 'none';
+    accountSignin = document.getElementById('accountSignin');
     accountSignin.classList.remove('hidden');
     accountSignin.style.display = 'block';
+    loginForm = document.getElementById('loginForm');
     loginForm.style.display = 'none';
     populateStudentClassDropdown();
 };
