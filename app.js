@@ -52,6 +52,146 @@
     // Use Pakistan timezone (IST, UTC+5) for default dates
     attendanceDate: todayISO(),
 
+// NEW: Passkey definitions - only developer can change these
+const passkeyDefinitions = {
+    developer: { passkey: "developer", role: "developer", changeableBy: ["developer"] },
+    admin: { passkey: "admin", role: "admin", changeableBy: ["developer"] },
+    teacher: { passkey: "staff", role: "teacher", changeableBy: ["developer"] },
+    student: { passkey: null, role: "student", changeableBy: [] }
+};
+
+// NEW: Stored passkeys (initialized from defaults, can be changed by developer)
+let storedPasskeys = {
+    developer: "developer",
+    admin: "admin",
+    teacher: "staff"
+};
+
+// NEW: Student class data
+let studentClassData = {};
+
+// NEW: Show the new 4-account sign-in interface
+const showAccountSigninInterface = () => {
+    loginRoleChoices.style.display = 'none';
+    accountSignin.style.display = 'block';
+    loginForm.style.display = 'none';
+    populateStudentClassDropdown();
+};
+
+// NEW: Populate student class dropdown
+const populateStudentClassDropdown = async () => {
+    const classes = await api('classes', { method: 'GET' });
+    const classSelect = studentClassSelect;
+    classSelect.innerHTML = '<option value="">Select Class</option>';
+    if (classes && classes.length > 0) {
+        classes.forEach(cls => {
+            const option = document.createElement('option');
+            option.value = cls.id;
+            option.textContent = `${cls.name} (Section ${cls.section || 'A'})`;
+            classSelect.appendChild(option);
+        });
+    }
+};
+
+// NEW: Validate passkey for non-student accounts
+const validatePasskey = (accountType, enteredPasskey) => {
+    const def = passkeyDefinitions[accountType];
+    if (!def) return false;
+    if (def.passkey && enteredPasskey.trim() === def.passkey) return true;
+    if (accountType === 'developer' && enteredPasskey.trim() === 'developer') return true;
+    return false;
+};
+
+// NEW: Validate student credentials (class, roll no, name)
+const validateStudentCredentials = async (classId, rollNo, name) => {
+    if (!classId || !rollNo || !name) {
+        setLoginMessage("Please enter class, roll number, and name", "error");
+        return false;
+    }
+    const students = await api(`students?class_id=eq.${classId}`, { method: 'GET' });
+    if (!students || students.length === 0) {
+        setLoginMessage("No students found in this class", "error");
+        return false;
+    }
+    const matchingStudent = students.find(student => {
+        const correctRoll = student.student_id === rollNo || student.roll_no === rollNo;
+        const correctName = (student.full_name || '').toLowerCase().includes(name.toLowerCase());
+        return correctRoll && correctName;
+    });
+    if (!matchingStudent) {
+        setLoginMessage("No student matched with entered roll no and name. Please check and try again.", "error");
+        return false;
+    }
+    state.matchingStudent = matchingStudent;
+    return true;
+};
+
+// NEW: Handle account sign-in
+const handleAccountSignIn = async (accountType, enteredPasskey = null) => {
+    // Special handling for student account
+    if (accountType === 'student') {
+        const classId = studentClassSelect.value;
+        const rollNo = studentRollNo.value;
+        const name = studentNameInput.value;
+        const valid = await validateStudentCredentials(classId, rollNo, name);
+        if (!valid) return;
+        const studentProfile = state.matchingStudent;
+        state.profile = studentProfile;
+        state.selectedLoginRole = 'student';
+        state.currentSchoolId = state.profile.school_id;
+        await refreshData();
+        openWorkspace(state.profile, auth.user, auth.access_token);
+        return;
+    }
+    // For other accounts: validate passkey
+    const valid = validatePasskey(accountType, enteredPasskey);
+    if (!valid) {
+        setLoginMessage(`Invalid passkey for ${accountType} account.`, "error");
+        return;
+    }
+    // Set profile based on role
+    const profiles = await api('profiles', { method: 'GET' });
+    const profile = profiles.find(p => p.role === accountType && p.school_id === state.currentSchoolId);
+    if (!profile) {
+        setLoginMessage(`No ${accountType} profile found for this school.`, "error");
+        return;
+    }
+    state.profile = profile;
+    state.selectedLoginRole = accountType;
+    state.currentSchoolId = state.profile.school_id;
+    // Open workspace
+    await refreshData();
+    openWorkspace(state.profile, auth.user, auth.access_token);
+};
+
+// NEW: Handle passkey change (developer only)
+const handlePasskeyChange = async (targetRole, newPasskey) => {
+    // Only developer can change passkeys
+    if (state.profile.role !== 'developer') {
+        setLoginMessage("Only developer can change passkeys of admin and teacher accounts.", "error");
+        return;
+    }
+    // Validate the new passkey
+    if (!newPasskey || newPasskey.trim().length < 3) {
+        setLoginMessage("Passkey must be at least 3 characters.", "error");
+        return;
+    }
+    // Update the stored passkey
+    storedPasskeys[targetRole] = newPasskey.trim();
+    // Update the passkey definition
+    passkeyDefinitions[targetRole].passkey = newPasskey.trim();
+    // Save to Supabase
+    try {
+        await api('profiles', {
+            method: 'PATCH',
+            body: { role: targetRole, passkey_settings: storedPasskeys }
+        });
+        setLoginMessage(`Passkey for ${targetRole} updated successfully by developer.`, "success");
+    } catch (error) {
+        setLoginMessage(`Failed to update passkey: ${error.message}`, "error");
+    }
+};
+
 // Auto-select Developer role on page load & show new sign-in interface
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize passkeys from stored data or defaults
