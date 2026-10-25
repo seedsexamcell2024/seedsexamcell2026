@@ -54,10 +54,10 @@
 };
 
 // NEW: Show the new 4-account sign-in interface on page load
-showAccountSigninInterface();
+// Called via openWorkspace / sign-out flow instead
 
 // NEW: Set up event listeners for 4-account sign-in interface on page load
-setupAccountSigninListeners();
+// Called via openWorkspace / sign-out flow instead
 
 // NEW: Passkey definitions - only developer can change these
 const passkeyDefinitions = {
