@@ -89,6 +89,9 @@ const showAccountSigninInterface = () => {
     populateStudentClassDropdown();
 };
 
+// Call on page load to show the new 4-account sign-in interface instead of old login form
+showAccountSigninInterface();
+
 // NEW: Populate student class dropdown
 const populateStudentClassDropdown = async () => {
     const classes = await api('classes', { method: 'GET' });
