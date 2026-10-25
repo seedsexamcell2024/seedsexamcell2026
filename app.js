@@ -138,10 +138,6 @@ const setupAccountSigninListeners = () => {
 
     // Student Verify & Sign In - removed (student account removed from sign-in page)
 };
-            classSelect.appendChild(option);
-        });
-    }
-};
 
 // Initialize new 4-account sign-in interface on page load
 showAccountSigninInterface();
