@@ -79,13 +79,15 @@ let studentClassData = {};
 
 // NEW: Show the new 4-account sign-in interface
 const showAccountSigninInterface = () => {
+    // loginRoleChoices removed from index.html
     const loginRoleChoices = document.getElementById('loginRoleChoices');
-    loginRoleChoices.style.display = 'none';
+    // loginRoleChoices.style.display = 'none';
     const accountSignin = document.getElementById('accountSignin');
     accountSignin.classList.remove('hidden');
     accountSignin.style.display = 'block';
+    // loginForm removed from index.html
     const loginForm = document.getElementById('loginForm');
-    loginForm.style.display = 'none';
+    // loginForm.style.display = 'none';
     // populateStudentClassDropdown() not called - student account removed
 };
 
