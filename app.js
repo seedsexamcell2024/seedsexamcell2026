@@ -86,7 +86,7 @@ const showAccountSigninInterface = () => {
     accountSignin.style.display = 'block';
     const loginForm = document.getElementById('loginForm');
     loginForm.style.display = 'none';
-    populateStudentClassDropdown();
+    // populateStudentClassDropdown() not called - student account removed
 };
 
 // Call on page load to show the new 4-account sign-in interface instead of old login form
