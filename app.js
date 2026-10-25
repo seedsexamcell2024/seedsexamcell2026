@@ -150,25 +150,27 @@ const validatePasskey = (accountType, enteredPasskey) => {
 
 // NEW: Handle account sign-in
 const handleAccountSignIn = async (accountType, enteredPasskey = null) => {
-    // For other accounts: validate passkey
+    // Validate passkey
     const valid = validatePasskey(accountType, enteredPasskey);
     if (!valid) {
         setLoginMessage(`Invalid passkey for ${accountType} account.`, "error");
         return;
     }
-    // Set profile based on role
-    const profiles = await api('profiles', { method: 'GET' });
-    const profile = profiles.find(p => p.role === accountType);
-    if (!profile) {
-        setLoginMessage(`No ${accountType} profile found for this school.`, "error");
-        return;
-    }
+    // Create profile for sign-in
+    const profile = {
+        id: accountType,
+        role: accountType,
+        display_name: accountType.charAt(0).toUpperCase() + accountType.slice(1),
+        full_name: accountType.charAt(0).toUpperCase() + accountType.slice(1) + ' Account',
+        school_id: 'default'
+    };
     state.profile = profile;
     state.selectedLoginRole = accountType;
-    state.currentSchoolId = state.profile.school_id;
+    state.currentSchoolId = profile.school_id;
+    state.token = 'demo-' + accountType + '-token';
     // Open workspace
     await refreshData();
-    openWorkspace(state.profile, auth.user, auth.access_token);
+    openWorkspace(state.profile, { email: `${accountType}@seeds.local` }, state.token);
 };
 
 // NEW: Handle passkey change (developer only)
