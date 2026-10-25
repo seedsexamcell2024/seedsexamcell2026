@@ -158,6 +158,10 @@ const setupAccountSigninListeners = () => {
     }
 };
 
+// Initialize new 4-account sign-in interface on page load
+showAccountSigninInterface();
+setupAccountSigninListeners();
+
 // NEW: Validate passkey for non-student accounts
 const validatePasskey = (accountType, enteredPasskey) => {
     const def = passkeyDefinitions[accountType];
