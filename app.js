@@ -283,29 +283,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Update state
     state.selectedLoginRole = 'developer';
+
+    // Additional state properties
+    Object.assign(state, {
+        attendanceClass: '',
+        absenteeDate: todayISO(),
+        studentDirectoryClass: '',
+        attendanceAssignmentId: '',
+        attendanceRangeMode: false,
+        attendanceRangeStart: todayISO(),
+        attendanceRangeEnd: todayISO(),
+        attendanceStatuses: {},
+        attendanceViewMode: 'daily',
+        attendanceMonth: todayISO().slice(0, 7),
+        attendancePrintOrientation: 'landscape',
+        reportCardScope: 'monthly',
+        reportCardTerm: '1st Term',
+        reportCardMonth: '',
+        reportCardStudentId: '',
+        reportCardClass: '',
+        data: Object.fromEntries([
+          'schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects',
+          'subject_enrollments', 'attendance', 'subject_attendance', 'assessments',
+          'marks', 'parent_students', 'homework_diaries', 'homework_receipts', 'absentee_records'
+        ].map(table => [table, []]))
+    });
 });
-    attendanceClass: '',
-    absenteeDate: todayISO(),
-    studentDirectoryClass: '',
-    attendanceAssignmentId: '',
-    attendanceRangeMode: false,
-    attendanceRangeStart: todayISO(),
-    attendanceRangeEnd: todayISO(),
-    attendanceStatuses: {},
-    attendanceViewMode: 'daily',
-    attendanceMonth: todayISO().slice(0, 7),
-    attendancePrintOrientation: 'landscape',
-    reportCardScope: 'monthly',
-    reportCardTerm: '1st Term',
-    reportCardMonth: '',
-    reportCardStudentId: '',
-    reportCardClass: '',
-    data: Object.fromEntries([
-      'schools', 'students', 'teachers', 'classes', 'subjects', 'class_subjects',
-      'subject_enrollments', 'attendance', 'subject_attendance', 'assessments',
-      'marks', 'parent_students', 'homework_diaries', 'homework_receipts', 'absentee_records'
-    ].map(table => [table, []]))
-  };
 
   const defaultDeveloperCredit = () => ({
     name: 'A. Rasheed',
