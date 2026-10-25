@@ -174,47 +174,8 @@ const validatePasskey = (accountType, enteredPasskey) => {
     return false;
 };
 
-// NEW: Validate student credentials (class, roll no, name)
-const validateStudentCredentials = async (classId, rollNo, name) => {
-    if (!classId || !rollNo || !name) {
-        setLoginMessage("Please enter class, roll number, and name", "error");
-        return false;
-    }
-    const students = await api(`students?class_id=eq.${classId}`, { method: 'GET' });
-    if (!students || students.length === 0) {
-        setLoginMessage("No students found in this class", "error");
-        return false;
-    }
-    const matchingStudent = students.find(student => {
-        const correctRoll = student.student_id === rollNo || student.roll_no === rollNo;
-        const correctName = (student.full_name || '').toLowerCase().includes(name.toLowerCase());
-        return correctRoll && correctName;
-    });
-    if (!matchingStudent) {
-        setLoginMessage("No student matched with entered roll no and name. Please check and try again.", "error");
-        return false;
-    }
-    state.matchingStudent = matchingStudent;
-    return true;
-};
-
 // NEW: Handle account sign-in
 const handleAccountSignIn = async (accountType, enteredPasskey = null) => {
-    // Special handling for student account
-    if (accountType === 'student') {
-        const classId = studentClassSelect.value;
-        const rollNo = studentRollNo.value;
-        const name = studentNameInput.value;
-        const valid = await validateStudentCredentials(classId, rollNo, name);
-        if (!valid) return;
-        const studentProfile = state.matchingStudent;
-        state.profile = studentProfile;
-        state.selectedLoginRole = 'student';
-        state.currentSchoolId = state.profile.school_id;
-        await refreshData();
-        openWorkspace(state.profile, auth.user, auth.access_token);
-        return;
-    }
     // For other accounts: validate passkey
     const valid = validatePasskey(accountType, enteredPasskey);
     if (!valid) {
