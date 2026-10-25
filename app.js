@@ -131,30 +131,7 @@ const setupAccountSigninListeners = () => {
         });
     }
 
-    // Student Verify & Sign In
-    const studentSignInBtn = document.getElementById('verifyStudentBtn');
-    if (studentSignInBtn) {
-        studentSignInBtn.addEventListener('click', async () => {
-            const classId = studentClassSelect.value;
-            const rollNo = studentRollNo.value;
-            const name = studentNameInput.value;
-            
-            if (!classId || !rollNo || !name) {
-                setLoginMessage('Please select a class, enter roll no and name.');
-                return;
-            }
-            
-            const valid = await validateStudentCredentials(classId, rollNo, name);
-            if (valid) {
-                // Sign in as student - navigate to student workspace
-                state.selectedLoginRole = 'student';
-                setLoginMessage('Student signed in successfully.');
-                goToView('students');
-            } else {
-                setLoginMessage('Invalid roll no or name. Please verify your credentials.');
-            }
-        });
-    }
+    // Student Verify & Sign In - removed (student account removed from sign-in page)
 };
             classSelect.appendChild(option);
         });
