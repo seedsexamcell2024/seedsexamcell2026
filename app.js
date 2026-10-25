@@ -102,6 +102,11 @@ const populateStudentClassDropdown = async () => {
             const option = document.createElement('option');
             option.value = cls.id;
             option.textContent = `${cls.name} (Section ${cls.section || 'A'})`;
+            classSelect.appendChild(option);
+        });
+    }
+};
+
 // NEW: Set up event listeners for 4-account sign-in interface
 const setupAccountSigninListeners = () => {
     // Developer Account sign-in
