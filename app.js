@@ -156,7 +156,7 @@ const handleAccountSignIn = async (accountType, enteredPasskey = null) => {
         setLoginMessage(`Invalid passkey for ${accountType} account.`, "error");
         return;
     }
-    // Create profile for sign-in
+    // Create profile for sign-in (no Supabase needed)
     const profile = {
         id: accountType,
         role: accountType,
@@ -168,8 +168,8 @@ const handleAccountSignIn = async (accountType, enteredPasskey = null) => {
     state.selectedLoginRole = accountType;
     state.currentSchoolId = profile.school_id;
     state.token = 'demo-' + accountType + '-token';
-    // Open workspace
-    await refreshData();
+    state.data = { schools: [], students: [], classes: [], assessments: [], marks: [], attendance: [], homework: [], reportcards: [], credits: [], reminders: [] };
+    // Open workspace directly
     openWorkspace(state.profile, { email: `${accountType}@seeds.local` }, state.token);
 };
 
