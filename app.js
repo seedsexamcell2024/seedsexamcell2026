@@ -77,18 +77,12 @@ let storedPasskeys = {
 // NEW: Student class data
 let studentClassData = {};
 
-// NEW: Show the new 4-account sign-in interface
+// NEW: Show the new 3-account sign-in interface
 const showAccountSigninInterface = () => {
-    // loginRoleChoices removed from index.html
-    const loginRoleChoices = document.getElementById('loginRoleChoices');
-    // loginRoleChoices.style.display = 'none';
     const accountSignin = document.getElementById('accountSignin');
     accountSignin.classList.remove('hidden');
     accountSignin.style.display = 'block';
-    // loginForm removed from index.html
-    const loginForm = document.getElementById('loginForm');
-    // loginForm.style.display = 'none';
-    // populateStudentClassDropdown() not called - student account removed
+    // loginRoleChoices and loginForm removed from index.html
 };
 
 // Call on page load to show the new 4-account sign-in interface instead of old login form
@@ -3550,11 +3544,10 @@ const remindersView = () => {
     $('#modeBanner').textContent = configured
       ? 'Sign in with the account provided by your school administrator. The app never stores your password.'
       : 'Database setup required. Sample records have been removed and sign-in is unavailable until you connect Supabase. Create a Supabase project, run supabase-schema.sql, then set its Project URL and public anon key in config.js. Never put a service-role key here.';
-    $('#loginForm').classList.toggle('hidden', !configured);
-    $('#loginRoleChoices').classList.toggle('hidden', !configured);
+    // loginForm removed from index.html - no longer toggling hidden state
     if (configured) $('#modeBanner').classList.add('secure');
 
-    $('#loginForm').addEventListener('submit', signIn);
+    // loginForm removed from index.html - no submit listener
     // Sync initial button states with selectedLoginRole
     const syncRoleButtons = () => {
       try {
@@ -3570,9 +3563,7 @@ const remindersView = () => {
     };
     syncRoleButtons();
 
-    const roleChoicesEl = $('#loginRoleChoices');
-    if (roleChoicesEl) {
-      roleChoicesEl.addEventListener('click', event => {
+    // loginRoleChoices removed from index.html - no role choice buttons
         try {
           const choice = event.target.closest('[data-login-role]');
           if (!choice) return;
