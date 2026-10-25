@@ -158,7 +158,7 @@ const handleAccountSignIn = async (accountType, enteredPasskey = null) => {
     }
     // Set profile based on role
     const profiles = await api('profiles', { method: 'GET' });
-    const profile = profiles.find(p => p.role === accountType && p.school_id === state.currentSchoolId);
+    const profile = profiles.find(p => p.role === accountType);
     if (!profile) {
         setLoginMessage(`No ${accountType} profile found for this school.`, "error");
         return;
