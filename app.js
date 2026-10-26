@@ -203,17 +203,11 @@ const handlePasskeyChange = async (targetRole, newPasskey) => {
 
 // Auto-select Developer role on page load & show new sign-in interface
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize passkeys from stored data or defaults
-    initializePasskeys();
-    
     // Show the new 4-account sign-in interface
     showAccountSigninInterface();
     
     // Set up event listeners for account sign-in buttons
     setupAccountSigninListeners();
-    
-    // Set up passkey change listeners (developer only)
-    setupPasskeyChangeListeners();
     
     // Force Developer button selection (fallback for old interface)
     const devBtn = document.querySelector('[data-login-role="developer"]');
