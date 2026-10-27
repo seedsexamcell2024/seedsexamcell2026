@@ -153,34 +153,6 @@ const setupAccountSigninListeners = () => {
 // showAccountSigninInterface();
 // setupAccountSigninListeners();
 
-// NEW: Handle passkey change (developer only)
-const handlePasskeyChange = async (targetRole, newPasskey) => {
-    // Only developer can change passkeys
-    if (state.profile.role !== 'developer') {
-        setLoginMessage("Only developer can change passkeys of admin and teacher accounts.", "error");
-        return;
-    }
-    // Validate the new passkey
-    if (!newPasskey || newPasskey.trim().length < 3) {
-        setLoginMessage("Passkey must be at least 3 characters.", "error");
-        return;
-    }
-    // Update the stored passkey
-    storedPasskeys[targetRole] = newPasskey.trim();
-    // Update the passkey definition
-    passkeyDefinitions[targetRole].passkey = newPasskey.trim();
-    // Save to Supabase
-    try {
-        await api('profiles', {
-            method: 'PATCH',
-            body: { role: targetRole, passkey_settings: storedPasskeys }
-        });
-        setLoginMessage(`Passkey for ${targetRole} updated successfully by developer.`, "success");
-    } catch (error) {
-        setLoginMessage(`Failed to update passkey: ${error.message}`, "error");
-    }
-};
-
 // Auto-select Developer role on page load & show new sign-in interface
 document.addEventListener('DOMContentLoaded', () => {
     // Show the simple sign-in interface
