@@ -60,16 +60,8 @@
 // Called below after all function definitions
 
 // ============================================================
-// SIMPLE ROLE-BASED SIGN-IN MODULE
+// SUPABASE AUTH SIGN-IN MODULE (Email/Password)
 // ============================================================
-
-// Simple passkeys per role (change these as needed)
-const SIMPLE_PASSKEYS = {
-    developer: 'dev123',
-    admin: 'admin123',
-    teacher: 'teach123',
-    student: 'student123'
-};
 
 // Show the sign-in interface
 const showAccountSigninInterface = () => {
@@ -80,73 +72,83 @@ const showAccountSigninInterface = () => {
     }
 };
 
-// Validate passkey for a role
-const validatePasskey = (accountType, enteredPasskey) => {
-    const expected = SIMPLE_PASSKEYS[accountType];
-    if (!expected) return false;
-    return String(enteredPasskey || '').trim() === expected;
-};
-
-// Handle account sign-in — simple, no Supabase needed
-const handleAccountSignIn = (accountType, enteredPasskey) => {
-    const valid = validatePasskey(accountType, enteredPasskey);
-    if (!valid) {
-        const msg = document.getElementById('loginMessage');
-        if (msg) {
-            msg.textContent = `Invalid passkey for ${accountType} account.`;
-            msg.style.color = '#dc2626';
-        }
+// Handle account sign-in via Supabase Auth
+const handleAccountSignIn = async (email, password, role) => {
+    if (!isConfigured) {
+        setLoginMessage('Supabase is not configured. Complete setup in config.js.', "error");
         return;
     }
 
-    // Clear any error message
-    const msg = document.getElementById('loginMessage');
-    if (msg) msg.textContent = '';
+    const submit = $('#loginSubmitButton');
+    if (submit) submit.disabled = true;
 
-    // Build profile
-    const roleLabels = {
-        developer: 'Developer',
-        admin: 'Administrator',
-        teacher: 'Teacher',
-        student: 'Student'
-    };
-    const profile = {
-        id: accountType,
-        role: accountType,
-        display_name: roleLabels[accountType] || accountType,
-        full_name: `${roleLabels[accountType] || accountType} Account`,
-        school_id: 'default'
-    };
+    try {
+        setLoginMessage('Signing in securely…');
 
-    // Set state
-    state.profile = profile;
-    state.selectedLoginRole = accountType;
-    state.currentSchoolId = profile.school_id;
-    state.token = 'demo-' + accountType + '-token';
-    state.data = { schools: [], students: [], classes: [], assessments: [], marks: [], attendance: [], homework: [], reportcards: [], credits: [], reminders: [] };
+        const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+            method: 'POST',
+            headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
 
-    // Open workspace
-    openWorkspace(state.profile, { email: `${accountType}@seeds.local` }, state.token);
+        const auth = await response.json();
+        if (!response.ok) throw new Error(auth.msg || auth.message || 'Sign in failed. Check your email and password.');
+
+        state.token = auth.access_token;
+        state.user = auth.user;
+
+        let profiles = await api(`profiles?id=eq.${encodeURIComponent(auth.user.id)}&select=*`);
+        if (!profiles.length) {
+            throw new Error('Your account has no school profile yet. Ask an administrator to create one.');
+        }
+
+        state.profile = profiles[0];
+        if (state.profile.role !== role) {
+            throw new Error(`This is a ${roleNames[state.profile.role] || 'different'} account. Select the matching account type.`);
+        }
+
+        state.selectedLoginRole = role;
+        state.currentSchoolId = state.profile.school_id;
+        await refreshData();
+        await migrateLegacyStudentPhotos();
+
+        openWorkspace(state.profile, auth.user, auth.access_token);
+    } catch (error) {
+        state.token = '';
+        state.user = null;
+        setLoginMessage(error instanceof Error ? error.message : 'Sign in failed.', "error");
+    } finally {
+        if (submit) submit.disabled = false;
+    }
 };
 
-// Set up sign-in button listeners
+// Set up sign-in form listeners
 const setupAccountSigninListeners = () => {
-    const roles = ['developer', 'admin', 'teacher', 'student'];
-    roles.forEach(role => {
-        const btn = document.querySelector(`.${role}-card .signin-btn`);
-        const input = document.getElementById(`${role}Passkey`);
-        if (btn && input) {
-            btn.addEventListener('click', () => {
-                handleAccountSignIn(role, input.value);
-            });
-            // Allow Enter key in passkey input
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    handleAccountSignIn(role, input.value);
-                }
-            });
-        }
-    });
+    // Form submission
+    const form = $('#loginForm');
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = $('#loginEmail').value.trim();
+            const password = $('#loginPassword').value;
+            const role = $('#loginRole').value || 'developer';
+            if (!email || !password) {
+                setLoginMessage('Please enter both email and password.', "error");
+                return;
+            }
+            await handleAccountSignIn(email, password, role);
+        });
+    }
+
+    // Register link
+    const regLink = $('#showRegisterLink');
+    if (regLink) {
+        regLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            $('#accountSignin').style.display = 'none';
+            $('#registerContainer').style.display = 'block';
+        });
+    }
 };
 
 // Initialize on page load (called from DOMContentLoaded below)

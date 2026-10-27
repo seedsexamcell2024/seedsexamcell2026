@@ -19,22 +19,22 @@
         <h1>Better learning starts with clarity.</h1>
         <p class="login-copy">Attendance, assessments, and academic progress in one secure place.</p>
         <div id="modeBanner" class="mode-banner"></div>
-<!-- Account Sign-In Interface -->
+<!-- Professional Email/Password Sign-In (Supabase Auth) -->
         <div id="accountSignin" class="account-signin-container">
-          <p class="field-label">Select Account Type & Sign In</p>
+          <p class="field-label">Sign In</p>
           <div id="loginMessage" class="login-message" style="color:#dc2626; margin:0 0 12px 0; font-size:13px; display:none;"></div>
-          <div class="account-grid">
-            <!-- Developer Account -->
-            <div class="account-card developer-card" data-account="developer">
-              <div class="account-icon">👨‍💻</div>
-              <h3>Developer Account</h3>
-              <p class="passkey-label">Passkey:</p>
-              <input type="password" id="devPasskey" class="passkey-input" placeholder="Enter passkey">
-              <button class="signin-btn" data-role="developer">Sign In</button>
+          <div style="margin-bottom:12px;">
+              <label style="font-size:12px; font-weight:600; color:#10251e; display:block; margin-bottom:6px;">Email</label>
+              <input type="email" id="loginEmail" required style="width:100%; padding:12px; border:1px solid #d4dbd9; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
             </div>
+            <div style="margin-bottom:12px;">
+              <label style="font-size:12px; font-weight:600; color:#10251e; display:block; margin-bottom:6px;">Password</label>
+              <input type="password" id="loginPassword" required style="width:100%; padding:12px; border:1px solid #d4dbd9; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
+            </div>
+            <button type="submit" id="loginSubmitButton" class="button button-primary" style="width:100%; padding:12px; font-weight:600;">Sign In</button>
 
             <!-- Administrator Account -->
-            <div class="account-card admin-card" data-account="admin">
+            <div class="account-card " data-account="admin">
               <div class="account-icon">👔</div>
               <h3>Administrator Account</h3>
               <p class="passkey-label">Passkey:</p>
