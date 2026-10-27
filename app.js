@@ -124,6 +124,24 @@ const handleAccountSignIn = async (email, password, role) => {
 
 // Set up sign-in form listeners
 const setupAccountSigninListeners = () => {
+    let selectedRole = 'developer';
+
+    // Role button selection
+    document.querySelectorAll('.role-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.role-btn').forEach(b => {
+                b.style.background = '#fff';
+                b.style.color = '#10251e';
+                b.style.border = '1px solid #d4dbd9';
+            });
+            btn.style.background = '#10251e';
+            btn.style.color = '#fff';
+            btn.style.border = 'none';
+            selectedRole = btn.dataset.role;
+            $('#loginRole').value = selectedRole;
+        });
+    });
+
     // Form submission
     const form = $('#loginForm');
     if (form) {
@@ -147,6 +165,80 @@ const setupAccountSigninListeners = () => {
             e.preventDefault();
             $('#accountSignin').style.display = 'none';
             $('#registerContainer').style.display = 'block';
+        });
+    }
+
+    // Show login link
+    const loginLink = $('#showLoginLink');
+    if (loginLink) {
+        loginLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            $('#registerContainer').style.display = 'none';
+            $('#accountSignin').style.display = 'block';
+        });
+    }
+
+    // Register form submission
+    const regForm = $('#registerForm');
+    if (regForm) {
+        regForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submit = $('#registerSubmitButton');
+            if (submit) submit.disabled = true;
+            try {
+                const fullName = $('#registerFullName').value.trim();
+                const email = $('#registerEmail').value.trim();
+                const password = $('#registerPassword').value;
+                const role = $('#loginRole').value || 'student';
+
+                if (!fullName || !email || !password) {
+                    setLoginMessage('Please fill in all fields.', "error");
+                    return;
+                }
+
+                setLoginMessage('Creating account…');
+
+                // Sign up via Supabase Auth
+                const response = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+                    method: 'POST',
+                    headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const auth = await response.json();
+                if (!response.ok) throw new Error(auth.msg || auth.message || 'Registration failed.');
+
+                // Create profile
+                const schoolsResp = await api('schools?select=*');
+                const school = schoolsResp?.[0] || null;
+                if (!school) throw new Error('No school exists yet.');
+
+                const created = await api('profiles', {
+                    method: 'POST',
+                    body: {
+                        id: auth.user.id,
+                        school_id: school.id,
+                        role: role,
+                        display_name: fullName,
+                        teacher_id: null,
+                        student_id: null
+                    },
+                    prefer: 'return=representation'
+                });
+                if (!created?.length) throw new Error('Could not create profile.');
+
+                setLoginMessage('Account created. Please sign in.');
+                $('#registerContainer').style.display = 'none';
+                $('#accountSignin').style.display = 'block';
+                $('#loginEmail').value = email;
+                $('#loginPassword').value = password;
+                $('#loginRole').value = role;
+                selectedRole = role;
+            } catch (error) {
+                setLoginMessage(error instanceof Error ? error.message : 'Registration failed.', "error");
+            } finally {
+                if (submit) submit.disabled = false;
+            }
         });
     }
 };
