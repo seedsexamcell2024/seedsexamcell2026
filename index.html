@@ -22,6 +22,7 @@
 <!-- Account Sign-In Interface -->
         <div id="accountSignin" class="account-signin-container">
           <p class="field-label">Select Account Type & Sign In</p>
+          <div id="loginMessage" class="login-message" style="color:#dc2626; margin:0 0 12px 0; font-size:13px; display:none;"></div>
           <div class="account-grid">
             <!-- Developer Account -->
             <div class="account-card developer-card" data-account="developer">
@@ -31,7 +32,7 @@
               <input type="password" id="devPasskey" class="passkey-input" placeholder="Enter passkey">
               <button class="signin-btn" data-role="developer">Sign In</button>
             </div>
-            
+
             <!-- Administrator Account -->
             <div class="account-card admin-card" data-account="admin">
               <div class="account-icon">👔</div>
@@ -40,7 +41,7 @@
               <input type="password" id="adminPasskey" class="passkey-input" placeholder="Enter passkey">
               <button class="signin-btn" data-role="admin">Sign In</button>
             </div>
-            
+
             <!-- Teacher Account -->
             <div class="account-card teacher-card" data-account="teacher">
               <div class="account-icon">👨‍🏫</div>
@@ -49,8 +50,16 @@
               <input type="password" id="teacherPasskey" class="passkey-input" placeholder="Enter passkey">
               <button class="signin-btn" data-role="teacher">Sign In</button>
             </div>
-            
-            
+
+            <!-- Student Account -->
+            <div class="account-card student-card" data-account="student">
+              <div class="account-icon">🎓</div>
+              <h3>Student Account</h3>
+              <p class="passkey-label">Passkey:</p>
+              <input type="password" id="studentPasskey" class="passkey-input" placeholder="Enter passkey">
+              <button class="signin-btn" data-role="student">Sign In</button>
+            </div>
+
             </div>
           </div>
         </div>
