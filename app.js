@@ -59,119 +59,99 @@
 // NEW: Set up event listeners for 4-account sign-in interface on page load
 // Called below after all function definitions
 
-// NEW: Passkey definitions - only developer can change these
-const passkeyDefinitions = {
-    developer: { passkey: "developer", role: "developer", changeableBy: ["developer"] },
-    admin: { passkey: "admin", role: "admin", changeableBy: ["developer"] },
-    teacher: { passkey: "staff", role: "teacher", changeableBy: ["developer"] },
-    student: { passkey: null, role: "student", changeableBy: [] }
+// ============================================================
+// SIMPLE ROLE-BASED SIGN-IN MODULE
+// ============================================================
+
+// Simple passkeys per role (change these as needed)
+const SIMPLE_PASSKEYS = {
+    developer: 'dev123',
+    admin: 'admin123',
+    teacher: 'teach123',
+    student: 'student123'
 };
 
-// NEW: Stored passkeys (initialized from defaults, can be changed by developer)
-let storedPasskeys = {
-    developer: "developer",
-    admin: "admin",
-    teacher: "staff"
-};
-
-// NEW: Student class data
-let studentClassData = {};
-
-// NEW: Show the new 3-account sign-in interface
+// Show the sign-in interface
 const showAccountSigninInterface = () => {
     const accountSignin = document.getElementById('accountSignin');
-    accountSignin.classList.remove('hidden');
-    accountSignin.style.display = 'block';
-    // loginRoleChoices and loginForm removed from index.html
-};
-
-// Call on page load to show the new 4-account sign-in interface instead of old login form
-showAccountSigninInterface();
-
-// NEW: Populate student class dropdown
-const populateStudentClassDropdown = async () => {
-    const classes = await api('classes', { method: 'GET' });
-    const classSelect = document.getElementById('studentClassSelect');
-    classSelect.innerHTML = '<option value="">Select Class</option>';
-    if (classes && classes.length > 0) {
-        classes.forEach(cls => {
-            const option = document.createElement('option');
-            option.value = cls.id;
-            option.textContent = `${cls.name} (Section ${cls.section || 'A'})`;
-            classSelect.appendChild(option);
-        });
+    if (accountSignin) {
+        accountSignin.classList.remove('hidden');
+        accountSignin.style.display = 'block';
     }
 };
 
-// NEW: Set up event listeners for 4-account sign-in interface
-const setupAccountSigninListeners = () => {
-    // Developer Account sign-in
-    const devSignInBtn = document.querySelector('.developer-card .signin-btn');
-    if (devSignInBtn) {
-        devSignInBtn.addEventListener('click', () => {
-            const passkey = document.getElementById('devPasskey').value;
-            handleAccountSignIn('developer', passkey);
-        });
-    }
-
-    // Administrator Account sign-in
-    const adminSignInBtn = document.querySelector('.admin-card .signin-btn');
-    if (adminSignInBtn) {
-        adminSignInBtn.addEventListener('click', () => {
-            const passkey = document.getElementById('adminPasskey').value;
-            handleAccountSignIn('admin', passkey);
-        });
-    }
-
-    // Teacher Account sign-in
-    const teacherSignInBtn = document.querySelector('.teacher-card .signin-btn');
-    if (teacherSignInBtn) {
-        teacherSignInBtn.addEventListener('click', () => {
-            const passkey = document.getElementById('teacherPasskey').value;
-            handleAccountSignIn('teacher', passkey);
-        });
-    }
-
-    // Student Verify & Sign In - removed (student account removed from sign-in page)
-};
-
-// Initialize new 4-account sign-in interface on page load
-showAccountSigninInterface();
-setupAccountSigninListeners();
-
-// NEW: Validate passkey for non-student accounts
+// Validate passkey for a role
 const validatePasskey = (accountType, enteredPasskey) => {
-    const def = passkeyDefinitions[accountType];
-    if (!def) return false;
-    if (def.passkey && enteredPasskey.trim() === def.passkey) return true;
-    if (accountType === 'developer' && enteredPasskey.trim() === 'developer') return true;
-    return false;
+    const expected = SIMPLE_PASSKEYS[accountType];
+    if (!expected) return false;
+    return String(enteredPasskey || '').trim() === expected;
 };
 
-// NEW: Handle account sign-in
-const handleAccountSignIn = async (accountType, enteredPasskey = null) => {
-    // Validate passkey
+// Handle account sign-in — simple, no Supabase needed
+const handleAccountSignIn = (accountType, enteredPasskey) => {
     const valid = validatePasskey(accountType, enteredPasskey);
     if (!valid) {
-        setLoginMessage(`Invalid passkey for ${accountType} account.`, "error");
+        const msg = document.getElementById('loginMessage');
+        if (msg) {
+            msg.textContent = `Invalid passkey for ${accountType} account.`;
+            msg.style.color = '#dc2626';
+        }
         return;
     }
-    // Create profile for sign-in (no Supabase needed)
+
+    // Clear any error message
+    const msg = document.getElementById('loginMessage');
+    if (msg) msg.textContent = '';
+
+    // Build profile
+    const roleLabels = {
+        developer: 'Developer',
+        admin: 'Administrator',
+        teacher: 'Teacher',
+        student: 'Student'
+    };
     const profile = {
         id: accountType,
         role: accountType,
-        display_name: accountType.charAt(0).toUpperCase() + accountType.slice(1),
-        full_name: accountType.charAt(0).toUpperCase() + accountType.slice(1) + ' Account',
+        display_name: roleLabels[accountType] || accountType,
+        full_name: `${roleLabels[accountType] || accountType} Account`,
         school_id: 'default'
     };
+
+    // Set state
     state.profile = profile;
     state.selectedLoginRole = accountType;
     state.currentSchoolId = profile.school_id;
     state.token = 'demo-' + accountType + '-token';
     state.data = { schools: [], students: [], classes: [], assessments: [], marks: [], attendance: [], homework: [], reportcards: [], credits: [], reminders: [] };
-    // Open workspace directly
+
+    // Open workspace
     openWorkspace(state.profile, { email: `${accountType}@seeds.local` }, state.token);
 };
+
+// Set up sign-in button listeners
+const setupAccountSigninListeners = () => {
+    const roles = ['developer', 'admin', 'teacher', 'student'];
+    roles.forEach(role => {
+        const btn = document.querySelector(`.${role}-card .signin-btn`);
+        const input = document.getElementById(`${role}Passkey`);
+        if (btn && input) {
+            btn.addEventListener('click', () => {
+                handleAccountSignIn(role, input.value);
+            });
+            // Allow Enter key in passkey input
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleAccountSignIn(role, input.value);
+                }
+            });
+        }
+    });
+};
+
+// Initialize on page load (called from DOMContentLoaded below)
+// showAccountSigninInterface();
+// setupAccountSigninListeners();
 
 // NEW: Handle passkey change (developer only)
 const handlePasskeyChange = async (targetRole, newPasskey) => {
@@ -203,20 +183,11 @@ const handlePasskeyChange = async (targetRole, newPasskey) => {
 
 // Auto-select Developer role on page load & show new sign-in interface
 document.addEventListener('DOMContentLoaded', () => {
-    // Show the new 4-account sign-in interface
+    // Show the simple sign-in interface
     showAccountSigninInterface();
-    
+
     // Set up event listeners for account sign-in buttons
     setupAccountSigninListeners();
-    
-    // Force Developer button selection (fallback for old interface)
-    const devBtn = document.querySelector('[data-login-role="developer"]');
-    if (devBtn) {
-        devBtn.classList.add('selected');
-        devBtn.setAttribute('aria-pressed', 'true');
-    }
-    // Update state
-    state.selectedLoginRole = 'developer';
 
     // Additional state properties
     Object.assign(state, {
