@@ -47,6 +47,28 @@
           <p style="margin-top:12px; font-size:13px; color:#6b7a72; text-align:center;">
             <a href="#" id="showRegisterLink" style="color:#10251e; text-decoration:none; font-weight:600;">Create account</a>
           </p>
+          <div id="registerContainer" class="account-signin-container" style="display:none;">
+            <p class="field-label">Create Account</p>
+            <div id="registerMessage" class="login-message" style="color:#dc2626; margin:0 0 12px 0; font-size:13px; min-height:20px;"></div>
+            <form id="registerForm">
+              <div style="margin-bottom:12px;">
+                <label style="font-size:12px; font-weight:600; color:#10251e; display:block; margin-bottom:6px;">Full Name</label>
+                <input type="text" id="registerFullName" required style="width:100%; padding:12px; border:1px solid #d4dbd9; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
+              </div>
+              <div style="margin-bottom:12px;">
+                <label style="font-size:12px; font-weight:600; color:#10251e; display:block; margin-bottom:6px;">Email</label>
+                <input type="email" id="registerEmail" required style="width:100%; padding:12px; border:1px solid #d4dbd9; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
+              </div>
+              <div style="margin-bottom:12px;">
+                <label style="font-size:12px; font-weight:600; color:#10251e; display:block; margin-bottom:6px;">Password</label>
+                <input type="password" id="registerPassword" required minlength="6" style="width:100%; padding:12px; border:1px solid #d4dbd9; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
+              </div>
+              <button type="submit" id="registerSubmitButton" class="button button-primary" style="width:100%; padding:12px; font-weight:600;">Create Account</button>
+            </form>
+            <p style="margin-top:12px; font-size:13px; color:#6b7a72; text-align:center;">
+              <a href="#" id="showLoginLink" style="color:#10251e; text-decoration:none; font-weight:600;">Sign in</a>
+            </p>
+          </div>
           <p class="field-label">Sign In</p>
           <div id="loginMessage" class="login-message" style="color:#dc2626; margin:0 0 12px 0; font-size:13px; display:none;"></div>
           <div style="margin-bottom:12px;">
